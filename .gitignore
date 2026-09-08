@@ -30,3 +30,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# DanuBaaS runtime configuration and generated files
+bin/
+/sensor-api
+__pycache__/
+deploy/.env.production

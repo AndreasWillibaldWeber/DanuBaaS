@@ -1,0 +1,14 @@
+DanuBaaS
+
+The backend, deployment configuration, tests, and documentation were imported
+from the demo-api project, which declared the Apache License, Version 2.0.
+That license is retained in LICENSES/Apache-2.0.txt and applies to the imported
+implementation, including cmd/, internal/, deploy/, docs/, .github/, the Go
+module files, Dockerfile, Makefile, .dockerignore, README.md, QUICKSTART.md,
+and CONTRIBUTING.md.
+
+The initial DanuBaaS repository's MIT license and its copyright notice for
+Andreas Willibald Weber are retained in LICENSE for the original material.
+
+Third-party dependencies retain their respective licenses. The workshop report
+and its original images are separate material and are not included in this import.

@@ -1,0 +1,7 @@
+.git
+.env
+*.out
+coverage*
+bin
+# Deployment credentials and Node-RED dependencies are not Go build inputs.
+deploy
