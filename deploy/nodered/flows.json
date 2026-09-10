@@ -1,0 +1,542 @@
+[
+  {
+    "id": "7f70b1c1a742f385",
+    "type": "tab",
+    "label": "Sensor demo",
+    "disabled": false,
+    "info": "Select INGESTION_BACKEND=api or mqtt. MQTT writes use Mosquitto \u2192 Telegraf \u2192 TimescaleDB, returning 202 after broker acknowledgment. GET/dashboard queries always use the Go read API."
+  },
+  {
+    "id": "d9210d46bf2e4b72",
+    "type": "http in",
+    "z": "7f70b1c1a742f385",
+    "name": "Read values (API key)",
+    "url": "/api/v1/values",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 80,
+    "wires": [
+      [
+        "b9b61919a25ab478"
+      ]
+    ]
+  },
+  {
+    "id": "d6d56b53789be3b1",
+    "type": "http in",
+    "z": "7f70b1c1a742f385",
+    "name": "Write values (API key)",
+    "url": "/api/v1/values",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 140,
+    "wires": [
+      [
+        "174b62c53e07a0d9"
+      ]
+    ]
+  },
+  {
+    "id": "b9b61919a25ab478",
+    "type": "function",
+    "z": "7f70b1c1a742f385",
+    "name": "Forward caller API key",
+    "func": "const query = msg.req.originalUrl.includes(\"?\") ? msg.req.originalUrl.slice(msg.req.originalUrl.indexOf(\"?\")) : \"\";\nmsg.url = \"http://api:8080/api/v1/values\" + query;\nmsg.method = \"GET\";\nmsg.headers = {\"X-API-Key\": msg.req.headers[\"x-api-key\"] || \"\", \"Content-Type\":\"application/json\"};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 80,
+    "wires": [
+      [
+        "a7ead151aa2b8f2d"
+      ]
+    ]
+  },
+  {
+    "id": "554f19b2c69bfc27",
+    "type": "function",
+    "z": "7f70b1c1a742f385",
+    "name": "Forward caller API key",
+    "func": "const query = msg.req.originalUrl.includes(\"?\") ? msg.req.originalUrl.slice(msg.req.originalUrl.indexOf(\"?\")) : \"\";\nmsg.url = \"http://api:8080/api/v1/values\" + query;\nmsg.method = \"POST\";\nmsg.headers = {\"X-API-Key\": msg.req.headers[\"x-api-key\"] || \"\", \"Content-Type\":\"application/json\"};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 140,
+    "wires": [
+      [
+        "a7ead151aa2b8f2d"
+      ]
+    ]
+  },
+  {
+    "id": "a7ead151aa2b8f2d",
+    "type": "http request",
+    "z": "7f70b1c1a742f385",
+    "name": "Go API",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 680,
+    "y": 110,
+    "wires": [
+      [
+        "69785c1b7b82c9ca"
+      ]
+    ]
+  },
+  {
+    "id": "69785c1b7b82c9ca",
+    "type": "function",
+    "z": "7f70b1c1a742f385",
+    "name": "Return API result safely",
+    "func": "if (!Number.isInteger(msg.statusCode)) { msg.statusCode=503; msg.payload={error:{code:\"storage_unavailable\",message:\"API unavailable; retry with the same IDs\"}}; }\nconst upstream = msg.headers || {};\nmsg.headers = {\"Content-Type\":\"application/json\", \"Cache-Control\":\"no-store\"};\nfor (const k of [\"link\", \"x-next-cursor\", \"location\", \"allow\"]) if (upstream[k]) msg.headers[k] = upstream[k];\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 930,
+    "y": 110,
+    "wires": [
+      [
+        "c80063361dcc3aae"
+      ]
+    ]
+  },
+  {
+    "id": "c80063361dcc3aae",
+    "type": "http response",
+    "z": "7f70b1c1a742f385",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 1180,
+    "y": 110,
+    "wires": []
+  },
+  {
+    "id": "024efb542993fd90",
+    "type": "mqtt in",
+    "z": "7f70b1c1a742f385",
+    "name": "Canonical values from MQTT",
+    "topic": "raw/v1/+/+",
+    "qos": "1",
+    "datatype": "json",
+    "broker": "5a11302e9c4e5c14",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 200,
+    "y": 260,
+    "wires": [
+      [
+        "f5cf6516bc8e1c21"
+      ]
+    ]
+  },
+  {
+    "id": "f5cf6516bc8e1c21",
+    "type": "function",
+    "z": "7f70b1c1a742f385",
+    "name": "Attach internal API key",
+    "func": "const parts=msg.topic.split(\"/\");\nconst values=Array.isArray(msg.payload)?msg.payload:[msg.payload];\nif (!values.length || values.some(v => !v || v.gateway_id !== parts[2] || v.sensor_id !== parts[3])) { node.warn(\"MQTT payload identity does not match topic\"); return null; }\nmsg.method=\"POST\";\nmsg.url=\"http://api:8080/api/v1/values\";\nmsg.headers={\"X-API-Key\":global.get(\"apiKey\"),\"Content-Type\":\"application/json\"};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 470,
+    "y": 260,
+    "wires": [
+      [
+        "174b62c53e07a0d9"
+      ]
+    ]
+  },
+  {
+    "id": "e230566948303284",
+    "type": "http request",
+    "z": "7f70b1c1a742f385",
+    "name": "Commit MQTT values",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 730,
+    "y": 260,
+    "wires": [
+      [
+        "d9bc59e3c86c6c11"
+      ]
+    ]
+  },
+  {
+    "id": "d9bc59e3c86c6c11",
+    "type": "function",
+    "z": "7f70b1c1a742f385",
+    "name": "Report rejected delivery",
+    "func": "if (msg.statusCode !== 200 && msg.statusCode !== 201) { node.warn(\"MQTT ingestion failed with status \" + msg.statusCode + \"; source must retry using the same observation IDs\"); }\nreturn null;",
+    "outputs": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1010,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "c9f3e0ec4945ebc6",
+    "type": "inject",
+    "z": "7f70b1c1a742f385",
+    "name": "Refresh committed values",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "10",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "3",
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 170,
+    "y": 390,
+    "wires": [
+      [
+        "211591fcc0a02f6e"
+      ]
+    ]
+  },
+  {
+    "id": "211591fcc0a02f6e",
+    "type": "function",
+    "z": "7f70b1c1a742f385",
+    "name": "Read API pages",
+    "func": "msg.method=\"GET\";\nmsg.url=\"http://api:8080/api/v1/values?after=\" + (flow.get(\"dashboardCursor\") || 0) + \"&limit=1000\";\nmsg.headers={\"X-API-Key\":global.get(\"apiKey\")};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 390,
+    "wires": [
+      [
+        "088c4d80913ef724"
+      ]
+    ]
+  },
+  {
+    "id": "088c4d80913ef724",
+    "type": "http request",
+    "z": "7f70b1c1a742f385",
+    "name": "Read measurements",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 670,
+    "y": 390,
+    "wires": [
+      [
+        "bfface43bab677ca"
+      ]
+    ]
+  },
+  {
+    "id": "bfface43bab677ca",
+    "type": "function",
+    "z": "7f70b1c1a742f385",
+    "name": "Maintain latest 100 values",
+    "func": "if (msg.statusCode !== 200 || !Array.isArray(msg.payload)) return null;\nlet rows=context.get(\"rows\") || [];\nconst byId=new Map(rows.map(r=>[r.id,r]));\nfor (const row of msg.payload) byId.set(row.id,row);\nrows=Array.from(byId.values()).sort((a,b)=>b.sequence-a.sequence).slice(0,100);\ncontext.set(\"rows\",rows);\n// Cursor belongs to flow context so the next poll advances through all pages.\nif (rows.length) flow.set(\"dashboardCursor\",rows[0].sequence);\nmsg.payload=rows;\nmsg.headers={};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 940,
+    "y": 390,
+    "wires": [
+      [
+        "3a9c32853758ecbc"
+      ]
+    ]
+  },
+  {
+    "id": "3a9c32853758ecbc",
+    "type": "ui-table",
+    "z": "7f70b1c1a742f385",
+    "group": "93e3ce6efeefb6cb",
+    "name": "Latest committed observations",
+    "label": "Latest committed observations",
+    "order": 1,
+    "width": 0,
+    "height": 0,
+    "maxrows": 100,
+    "autocols": true,
+    "showSearch": true,
+    "deselect": true,
+    "selectionType": "none",
+    "columns": [],
+    "mobileBreakpoint": "sm",
+    "mobileBreakpointType": "defaults",
+    "action": "replace",
+    "className": "",
+    "x": 1230,
+    "y": 390,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "b42ac7caff9af9a8",
+    "type": "ui-template",
+    "z": "7f70b1c1a742f385",
+    "group": "93e3ce6efeefb6cb",
+    "page": "",
+    "ui": "",
+    "name": "Sign out",
+    "order": 2,
+    "width": 0,
+    "height": 0,
+    "head": "",
+    "format": "<template><form action=\"/logout\" method=\"post\"><button type=\"submit\">Sign out of dashboard</button></form></template>",
+    "storeOutMessages": false,
+    "passthru": false,
+    "resendOnRefresh": false,
+    "templateScope": "local",
+    "className": "",
+    "x": 1210,
+    "y": 460,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "5a11302e9c4e5c14",
+    "type": "mqtt-broker",
+    "name": "Internal Mosquitto",
+    "broker": "mosquitto",
+    "port": "1883",
+    "clientid": "node-red-ingestion-v1",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": false,
+    "autoUnsubscribe": false,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": ""
+  },
+  {
+    "id": "bed2f8b79a5613dc",
+    "type": "ui-base",
+    "name": "Sensor dashboard",
+    "path": "/dashboard",
+    "appIcon": "",
+    "includeClientData": true,
+    "acceptsClientConfig": [
+      "ui-notification",
+      "ui-control"
+    ],
+    "showPathInSidebar": false,
+    "headerContent": "page",
+    "navigationStyle": "default",
+    "titleBarStyle": "default",
+    "showReconnectNotification": true,
+    "notificationDisplayTime": 3,
+    "showDisconnectNotification": true
+  },
+  {
+    "id": "cd2c137ff7e8e778",
+    "type": "ui-page",
+    "name": "Sensor observations",
+    "ui": "bed2f8b79a5613dc",
+    "path": "/values",
+    "icon": "water",
+    "layout": "grid",
+    "theme": "78660998b0afeb5f",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": "0",
+        "cols": "3"
+      },
+      {
+        "name": "Tablet",
+        "px": "576",
+        "cols": "6"
+      },
+      {
+        "name": "Desktop",
+        "px": "1024",
+        "cols": "12"
+      }
+    ],
+    "order": 1,
+    "className": "",
+    "visible": true,
+    "disabled": false
+  },
+  {
+    "id": "93e3ce6efeefb6cb",
+    "type": "ui-group",
+    "name": "Committed measurements",
+    "page": "cd2c137ff7e8e778",
+    "width": 12,
+    "height": 1,
+    "order": 1,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "78660998b0afeb5f",
+    "type": "ui-theme",
+    "name": "Default",
+    "colors": {
+      "surface": "#ffffff",
+      "primary": "#12616a",
+      "bgPage": "#f3f6f8",
+      "groupBg": "#ffffff",
+      "groupOutline": "#d6e1e5"
+    },
+    "sizes": {
+      "density": "default",
+      "pagePadding": "12px",
+      "groupGap": "12px",
+      "groupBorderRadius": "6px",
+      "widgetGap": "12px"
+    }
+  },
+  {
+    "id": "5d8d484613390a9e",
+    "type": "http in",
+    "z": "7f70b1c1a742f385",
+    "name": "Session middleware: GET /login",
+    "url": "/login",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 220,
+    "y": 560,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "b2039e8f241b0676",
+    "type": "http in",
+    "z": "7f70b1c1a742f385",
+    "name": "Session middleware: POST /login",
+    "url": "/login",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 220,
+    "y": 620,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "b61955113780921b",
+    "type": "http in",
+    "z": "7f70b1c1a742f385",
+    "name": "Session middleware: POST /logout",
+    "url": "/logout",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 220,
+    "y": 680,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "46dde28ae44af54e",
+    "type": "http in",
+    "z": "7f70b1c1a742f385",
+    "name": "Session middleware: GET /",
+    "url": "/",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 220,
+    "y": 740,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "174b62c53e07a0d9",
+    "type": "function",
+    "z": "7f70b1c1a742f385",
+    "name": "Select ingestion backend",
+    "func": "const ingestion = global.get(\"ingestion\");\nif (ingestion.backend === \"api\") {\n    return msg.req ? [msg, null, null] : [null, msg, null];\n}\nif (msg.req) {\n    if (msg.req.originalUrl.includes(\"?\")) {\n        msg.statusCode=400; msg.payload={error:{code:\"invalid_query\",message:\"POST does not accept query parameters\"}};\n        return [null,null,msg];\n    }\n    if ((msg.req.headers[\"content-type\"] || \"\").split(\";\")[0].trim().toLowerCase() !== \"application/json\") {\n        msg.statusCode=415; msg.payload={error:{code:\"unsupported_media_type\",message:\"Content-Type must be application/json\"}};\n        return [null,null,msg];\n    }\n}\ntry {\n    const result = await ingestion.publish(msg.payload);\n    if (!msg.req) return null;\n    msg.statusCode=202; msg.payload=result;\n} catch (error) {\n    if (!msg.req) { node.warn(error.message); return null; }\n    msg.statusCode=error.status || 503;\n    msg.payload={error:{code:msg.statusCode===503?\"broker_unavailable\":\"invalid_value\",message:error.message}};\n}\nmsg.headers={\"Content-Type\":\"application/json\",\"Cache-Control\":\"no-store\"};\nreturn [null,null,msg];",
+    "outputs": 3,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 200,
+    "wires": [
+      [
+        "554f19b2c69bfc27"
+      ],
+      [
+        "e230566948303284"
+      ],
+      [
+        "69785c1b7b82c9ca"
+      ]
+    ]
+  }
+]

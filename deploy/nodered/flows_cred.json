@@ -1,0 +1,6 @@
+{
+  "5a11302e9c4e5c14": {
+    "user": "node-red",
+    "password": "${MQTT_NODE_RED_PASSWORD}"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "dbe-node-red-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Versioned Node-RED dashboard, ingestion flows, and independent session authentication",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:runtime": "node --test test/runtime.integration.cjs",
+    "test:telegraf": "node --test test/telegraf.integration.cjs"
+  },
+  "dependencies": {
+    "@flowfuse/node-red-dashboard": "1.31.0",
+    "bcryptjs": "3.0.3",
+    "express": "4.22.1",
+    "mqtt": "5.15.2"
+  },
+  "overrides": {
+    "qs": "6.16.0"
+  }
+}

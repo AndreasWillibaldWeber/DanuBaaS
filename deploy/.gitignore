@@ -1,0 +1,6 @@
+.env
+.env.production
+secrets/
+certs/
+backups/
+nodered/node_modules/

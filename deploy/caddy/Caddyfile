@@ -1,0 +1,47 @@
+{
+	admin off
+}
+
+# Machine clients use only X-API-Key. No browser Basic Auth on this host.
+{$API_HOST} {
+	@values path /api/v1/values
+	handle @values {
+		reverse_proxy api:8080
+	}
+	respond 404
+}
+
+{$GRAFANA_HOST} {
+	basic_auth {
+		{$CADDY_USER} {$CADDY_PASSWORD_HASH}
+	}
+	reverse_proxy grafana:3000 {
+		# Preserve Grafana's session cookie, but never interpret the outer Basic
+		# credentials as a Grafana login. Auth proxy mode stays disabled.
+		header_up -Authorization
+		header_up -X-WEBAUTH-USER
+	}
+}
+
+{$NODE_RED_HOST} {
+	basic_auth {
+		{$CADDY_USER} {$CADDY_PASSWORD_HASH}
+	}
+	@dashboard path / /login /logout /dashboard /dashboard/*
+	handle @dashboard {
+		reverse_proxy node-red:1880 {
+			header_up -Authorization
+		}
+	}
+	# The editor remains on localhost:1880/admin, accessible via SSH forwarding.
+	respond 404
+}
+
+# Demonstrates Node-RED HTTP In nodes using the same API-key contract.
+{$NODE_RED_API_HOST} {
+	@values path /api/v1/values
+	handle @values {
+		reverse_proxy node-red:1880
+	}
+	respond 404
+}

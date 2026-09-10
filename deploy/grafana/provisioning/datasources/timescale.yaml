@@ -1,0 +1,17 @@
+apiVersion: 1
+datasources:
+  - name: Sensor measurements
+    uid: sensor-postgres
+    type: postgres
+    access: proxy
+    url: timescaledb:5432
+    user: grafana_reader
+    secureJsonData:
+      password: ${DB_GRAFANA_PASSWORD}
+    jsonData:
+      database: sensors
+      sslmode: disable
+      postgresVersion: 1700
+      timescaledb: true
+    isDefault: true
+    editable: false

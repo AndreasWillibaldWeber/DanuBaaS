@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: Sensor demo
+    folder: Sensors
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /etc/grafana/dashboards

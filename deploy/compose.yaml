@@ -1,0 +1,236 @@
+name: dbe-sensors
+
+x-runtime: &runtime
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+
+services:
+  timescaledb:
+    <<: *runtime
+    image: timescale/timescaledb:2.27.1-pg17@sha256:6e4b469dee0395a8a6d8c818384b0226a749997a29a312f314413f98e4161f82
+    environment:
+      POSTGRES_DB: sensors
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_admin_password
+    secrets: [db_admin_password, db_api_password, db_grafana_password]
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./postgres/10-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d sensors']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: ..
+    image: dbe-sensor-api:local
+    command: [migrate]
+    environment:
+      DB_HOST: timescaledb
+      DB_NAME: sensors
+      DB_USER: postgres
+      DB_PASSWORD_FILE: /run/secrets/db_admin_password
+      DB_SSLMODE: disable
+    secrets: [db_admin_password]
+    networks: [database]
+    depends_on:
+      timescaledb: {condition: service_healthy}
+    restart: 'no'
+
+  grants:
+    image: timescale/timescaledb:2.27.1-pg17@sha256:6e4b469dee0395a8a6d8c818384b0226a749997a29a312f314413f98e4161f82
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - 'export DB_TELEGRAF_PASSWORD="$$(cat /run/secrets/db_telegraf_password)"; export PGPASSWORD="$$(cat /run/secrets/db_admin_password)"; exec psql -h timescaledb -U postgres -d sensors -v ON_ERROR_STOP=1 -f /grants.sql'
+    secrets: [db_admin_password, db_telegraf_password]
+    volumes: [./postgres/grants.sql:/grants.sql:ro]
+    networks: [database]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: 'no'
+
+  api:
+    <<: *runtime
+    build: ..
+    image: dbe-sensor-api:local
+    read_only: true
+    cap_drop: [ALL]
+    environment:
+      DB_HOST: timescaledb
+      DB_NAME: sensors
+      DB_USER: sensor_api
+      DB_PASSWORD_FILE: /run/secrets/db_api_password
+      DB_SSLMODE: disable
+      API_KEY_FILE: /run/secrets/api_key
+    secrets: [db_api_password, api_key]
+    networks: [edge, ingestion, database]
+    depends_on:
+      grants: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, /sensor-api, healthcheck]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mosquitto-init:
+    image: eclipse-mosquitto:2.0.22@sha256:212f89e1eaeb2c322d6441b64396e3346026674db8fa9c27beac293405c32b3c
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - 'mosquitto_passwd -b -c /auth/passwords node-red "$$(cat /run/secrets/mqtt_node_red_password)"; mosquitto_passwd -b /auth/passwords demo-gateway "$$(cat /run/secrets/mqtt_demo_password)"; mosquitto_passwd -b /auth/passwords telegraf "$$(cat /run/secrets/mqtt_telegraf_password)"; chown 1883:1883 /auth/passwords; chmod 600 /auth/passwords'
+    secrets: [mqtt_node_red_password, mqtt_demo_password, mqtt_telegraf_password]
+    volumes: [mqtt_auth:/auth]
+    network_mode: none
+    restart: 'no'
+
+  mosquitto:
+    <<: *runtime
+    image: eclipse-mosquitto:2.0.22@sha256:212f89e1eaeb2c322d6441b64396e3346026674db8fa9c27beac293405c32b3c
+    user: '1883:1883'
+    ports: ['8883:8883']
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - ${MQTT_CERTS_DIR:-./certs/mqtt}:/mosquitto/certs:ro
+      - mqtt_auth:/mosquitto/auth:ro
+      - mqtt_data:/mosquitto/data
+    networks: [ingestion]
+    depends_on:
+      mosquitto-init: {condition: service_completed_successfully}
+
+  telegraf:
+    <<: *runtime
+    image: telegraf:1.36.4@sha256:efd5445346e090ef2fae481d2da81c85168381e92c661837906caf9e6047ae58
+    user: '1000:1000'
+    entrypoint: [/bin/sh, /etc/telegraf/start.sh]
+    read_only: true
+    cap_drop: [ALL]
+    secrets: [db_telegraf_password, mqtt_telegraf_password]
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./telegraf/start.sh:/etc/telegraf/start.sh:ro
+    networks: [ingestion, database]
+    depends_on:
+      grants: {condition: service_completed_successfully}
+      mosquitto: {condition: service_started}
+
+  node-red:
+    <<: *runtime
+    build: ./nodered
+    image: dbe-node-red:local
+    ports: ['127.0.0.1:1880:1880']
+    environment:
+      INGESTION_BACKEND: ${INGESTION_BACKEND:-api}
+      NODE_RED_ADMIN_USER: ${NODE_RED_ADMIN_USER:-admin}
+      NODE_RED_ADMIN_PASSWORD_HASH_FILE: /run/secrets/node_red_admin_password_hash
+      NODE_RED_CREDENTIAL_SECRET_FILE: /run/secrets/node_red_credential_secret
+      DASHBOARD_USER: ${DASHBOARD_USER:-operator}
+      DASHBOARD_PASSWORD_HASH_FILE: /run/secrets/dashboard_password_hash
+      DASHBOARD_ORIGIN: https://${NODE_RED_HOST:-nodered.localhost}
+      API_KEY_FILE: /run/secrets/api_key
+      MQTT_NODE_RED_PASSWORD_FILE: /run/secrets/mqtt_node_red_password
+    secrets: [node_red_admin_password_hash, node_red_credential_secret, dashboard_password_hash, api_key, mqtt_node_red_password]
+    volumes: [node_red_data:/data]
+    networks: [edge, ingestion]
+    depends_on:
+      api: {condition: service_healthy}
+      mosquitto: {condition: service_started}
+
+  grafana:
+    <<: *runtime
+    image: grafana/grafana:13.1.0@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
+    entrypoint: [/bin/sh, /etc/grafana/start.sh]
+    environment:
+      GF_SERVER_ROOT_URL: https://${GRAFANA_HOST:-grafana.localhost}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_SECURITY_COOKIE_SECURE: 'true'
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_AUTH_BASIC_ENABLED: 'false'
+      GF_AUTH_PROXY_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    secrets: [grafana_admin_password, db_grafana_password]
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./grafana/start.sh:/etc/grafana/start.sh:ro
+    networks: [edge, database]
+    depends_on:
+      grants: {condition: service_completed_successfully}
+
+  caddy:
+    <<: *runtime
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    entrypoint: [/bin/sh, /etc/caddy/start.sh]
+    environment:
+      API_HOST: ${API_HOST:-api.localhost}
+      GRAFANA_HOST: ${GRAFANA_HOST:-grafana.localhost}
+      NODE_RED_HOST: ${NODE_RED_HOST:-nodered.localhost}
+      NODE_RED_API_HOST: ${NODE_RED_API_HOST:-flows.localhost}
+      CADDY_USER: ${CADDY_USER:-viewer}
+    secrets: [caddy_password_hash]
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/start.sh:/etc/caddy/start.sh:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      api: {condition: service_healthy}
+      node-red: {condition: service_started}
+      grafana: {condition: service_started}
+
+  backup:
+    image: timescale/timescaledb:2.27.1-pg17@sha256:6e4b469dee0395a8a6d8c818384b0226a749997a29a312f314413f98e4161f82
+    profiles: [backup]
+    entrypoint: [/bin/sh, /backup.sh]
+    environment:
+      PGHOST: timescaledb
+      PGUSER: postgres
+      PGDATABASE: sensors
+    secrets: [db_admin_password]
+    volumes:
+      - ./scripts/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    networks: [database]
+    depends_on:
+      timescaledb: {condition: service_healthy}
+
+networks:
+  edge: {}
+  ingestion: {}
+  database:
+    internal: true
+
+volumes:
+  database: {}
+  mqtt_auth: {}
+  mqtt_data: {}
+  node_red_data: {}
+  grafana_data: {}
+  caddy_data: {}
+  caddy_config: {}
+
+secrets:
+  db_admin_password: {file: "${SECRETS_DIR:-./secrets}/db_admin_password"}
+  db_api_password: {file: "${SECRETS_DIR:-./secrets}/db_api_password"}
+  db_grafana_password: {file: "${SECRETS_DIR:-./secrets}/db_grafana_password"}
+  api_key: {file: "${SECRETS_DIR:-./secrets}/api_key"}
+  mqtt_node_red_password: {file: "${SECRETS_DIR:-./secrets}/mqtt_node_red_password"}
+  mqtt_demo_password: {file: "${SECRETS_DIR:-./secrets}/mqtt_demo_password"}
+  node_red_admin_password_hash: {file: "${SECRETS_DIR:-./secrets}/node_red_admin_password_hash"}
+  node_red_credential_secret: {file: "${SECRETS_DIR:-./secrets}/node_red_credential_secret"}
+  dashboard_password_hash: {file: "${SECRETS_DIR:-./secrets}/dashboard_password_hash"}
+  grafana_admin_password: {file: "${SECRETS_DIR:-./secrets}/grafana_admin_password"}
+  caddy_password_hash: {file: "${SECRETS_DIR:-./secrets}/caddy_password_hash"}
+  db_telegraf_password: {file: "${SECRETS_DIR:-./secrets}/db_telegraf_password"}
+  mqtt_telegraf_password: {file: "${SECRETS_DIR:-./secrets}/mqtt_telegraf_password"}

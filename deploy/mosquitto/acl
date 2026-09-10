@@ -1,0 +1,11 @@
+user node-red
+topic read raw/v1/+/+
+topic write normalized/v1/batch
+
+# The demo publisher owns the demo gateway namespace. Add per-gateway users and
+# matching ACL entries for additional senders; never allow anonymous writes.
+user demo-gateway
+topic write raw/v1/demo/+
+
+user telegraf
+topic read normalized/v1/batch
