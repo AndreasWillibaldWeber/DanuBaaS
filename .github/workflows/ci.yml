@@ -1,0 +1,38 @@
+name: DanuBaaS CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5
+        with:
+          go-version: '1.26.8'
+      - run: go mod verify
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - run: go test ./internal/httpapi -run='^$' -fuzz=FuzzPOSTNeverPanics -fuzztime=10s
+      - run: go build ./cmd/sensor-api
+      - run: make test-deploy
+  database:
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: timescale/timescaledb:2.27.1-pg17@sha256:6e4b469dee0395a8a6d8c818384b0226a749997a29a312f314413f98e4161f82
+        env:
+          POSTGRES_DB: sensor_test
+          POSTGRES_PASSWORD: disposable-ci-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U postgres -d sensor_test'
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version: '1.26.8'
+      - run: go test -race -count=1 -tags=integration ./internal/postgres
+        env:
+          TEST_DATABASE_URL: postgres://postgres:disposable-ci-password@localhost:5432/sensor_test?sslmode=disable
