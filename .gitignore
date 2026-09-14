@@ -38,3 +38,7 @@ __pycache__/
 deploy/.env.production
 
 deploy/alerts.json
+
+# Site-specific host security configuration belongs outside the checkout.
+security/debian/host.json
+security/debian/generated/

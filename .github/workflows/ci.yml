@@ -16,6 +16,7 @@ jobs:
       - run: go test ./internal/httpapi -run='^$' -fuzz=FuzzPOSTNeverPanics -fuzztime=10s
       - run: go build ./cmd/sensor-api
       - run: make test-deploy
+      - run: make test-security
   database:
     runs-on: ubuntu-latest
     services:

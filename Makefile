@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := test
-.PHONY: test integration vet build fmt dev prod prod-check test-deploy test-e2e
+.PHONY: test integration vet build fmt dev prod prod-check test-deploy test-e2e test-security
 
 # These commands never delete volumes or rotate existing credentials.
 dev:
@@ -32,3 +32,10 @@ build:
 
 fmt:
 	gofmt -w cmd internal
+
+# Host-security validation only: never applies firewall/SSH settings.
+test-security:
+	python3 -m unittest discover -s security/debian/tests -v
+	sh -n security/debian/install-packages.sh
+	sh -n security/debian/audit.sh
+	sh -n security/debian/tests/network_policy.sh
