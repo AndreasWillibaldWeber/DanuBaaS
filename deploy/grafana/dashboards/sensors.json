@@ -1,21 +1,1150 @@
 {
   "uid": "sensors",
-  "title": "Sensor observations",
+  "title": "Water-level monitoring",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "10s",
   "time": {
     "from": "now-24h",
     "to": "now"
   },
+  "templating": {
+    "list": [
+      {
+        "name": "sensor",
+        "label": "Monitored sensor",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "sensor-postgres"
+        },
+        "query": "SELECT CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS __text,sensor_id AS __value FROM (\nSELECT DISTINCT sensor_id FROM sensor.dashboard_values WHERE sensor_type='water-level' AND unit='m'\nUNION SELECT sensor_id FROM configuration.alert_rules) sensors ORDER BY __text",
+        "definition": "SELECT CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS __text,sensor_id AS __value FROM (\nSELECT DISTINCT sensor_id FROM sensor.dashboard_values WHERE sensor_type='water-level' AND unit='m'\nUNION SELECT sensor_id FROM configuration.alert_rules) sensors ORDER BY __text",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": true,
+        "sort": 1,
+        "options": [],
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
   "panels": [
+    {
+      "id": 10,
+      "title": "Warning \u00b7 Water level",
+      "type": "canvas",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "sensor-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH paired AS (WITH snapshot AS (\n SELECT r.*, CASE WHEN r.sensor_id='demo-stable' THEN 'WL-001' WHEN r.sensor_id='demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id='demo-elevated' THEN 'WL-003' WHEN r.sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id='quickstart' THEN 'WL-001'\nWHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(r.sensor_id,'-',3) || '-' ||\nCASE split_part(r.sensor_id,'-',4) || '-' || split_part(r.sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station,\n        latest.time AS observed_at, latest.value AS level, latest.location_id,\n        baseline.time AS baseline_at,\n        ((latest.value::numeric-baseline.value::numeric) /\n          NULLIF(extract(epoch FROM latest.time-baseline.time),0) * 60) AS rise,\n        CASE WHEN NOT r.enabled THEN 'Monitoring disabled'\n             WHEN latest.time IS NULL THEN 'No reading'\n             WHEN latest.time < r.updated_at THEN 'Awaiting new reading'\n             WHEN latest.time < now()-make_interval(secs=>r.stale_seconds) THEN 'Stale reading'\n             ELSE 'Fresh' END AS reading_status\n FROM configuration.alert_rules r\n LEFT JOIN LATERAL (\n   SELECT time,value,location_id FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND time<=now() AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n   ORDER BY time DESC, observation_id LIMIT 1\n ) latest ON true\n LEFT JOIN LATERAL (\n   SELECT time,value FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n     AND time>=latest.time-make_interval(secs=>r.rise_window_seconds)\n     AND time<=latest.time-make_interval(secs=>r.rise_min_seconds)\n   ORDER BY time, observation_id LIMIT 1\n ) baseline ON true\n WHERE r.sensor_id IN (${sensor:sqlstring})\n), candidates AS (\n SELECT *, CASE WHEN reading_status='Fresh' THEN level::numeric END AS current_value,\n        level_warning::numeric AS limit_value,\n        CASE WHEN reading_status='Fresh' AND 'level'='rise' AND baseline_at IS NULL\n             THEN 'No rise baseline' ELSE reading_status END AS status\n FROM snapshot WHERE enabled\n), winner AS (\n SELECT * FROM candidates\n ORDER BY current_value DESC NULLS LAST, sensor_id LIMIT 1\n)\nSELECT CASE WHEN side.position=0 THEN\n         coalesce('Current' || chr(10) || winner.station ||\n           CASE WHEN winner.status='Fresh' THEN '' ELSE chr(10) || winner.status END,\n           'Current' || chr(10) || 'No enabled rule')\n       ELSE coalesce('Limit' || chr(10) || winner.station, 'Limit' || chr(10) || 'Not configured') END AS name,\n       CASE WHEN side.position=0 THEN winner.current_value ELSE winner.limit_value END AS value,\n       winner.sensor_id, winner.location_id\nFROM (VALUES (0),(1)) side(position) LEFT JOIN winner ON true ORDER BY side.position), card_values AS (\n SELECT max(value) FILTER (WHERE name LIKE 'Current%') AS current_value,\n        max(value) FILTER (WHERE name LIKE 'Limit%') AS limit_value,\n        max(sensor_id) AS sensor_id,\n        max(split_part(name,chr(10),3)) AS reason\n FROM paired\n)\nSELECT coalesce(CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END,'\u2014') AS station,\n CASE WHEN sensor_id IS NULL THEN '\u2014'\n      WHEN current_value IS NULL THEN '-.-- m'\n      ELSE round(current_value,2)::text || ' m' END AS current_display,\n CASE WHEN limit_value IS NULL THEN '\u2014'\n      ELSE round(limit_value,2)::text || ' m' END AS limit_display,\n CASE WHEN sensor_id IS NULL THEN 'Not configured' ELSE coalesce(nullif(reason,''),'Fresh reading') END AS status\nFROM card_values",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "inlineEditing": false,
+        "panZoom": true,
+        "zoomToContent": true,
+        "showAdvancedTypes": false,
+        "tooltip": {
+          "mode": "none"
+        },
+        "root": {
+          "name": "Monitoring card",
+          "type": "frame",
+          "elements": [
+            {
+              "name": "Current heading",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 16,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "fixed",
+                  "field": "",
+                  "fixed": "Current"
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 0,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Current station",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 14,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "station",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 30,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Current value",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 27,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "current_display",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 65,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit heading",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 16,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "fixed",
+                  "field": "",
+                  "fixed": "Limit"
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 0,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit station",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 14,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "station",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 30,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit value",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 27,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "limit_display",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 65,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Reading status",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 12,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "status",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 105,
+                "width": 370,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            }
+          ],
+          "placement": {
+            "width": 370,
+            "height": 137
+          },
+          "background": {
+            "color": {
+              "fixed": "#A65300"
+            }
+          }
+        }
+      },
+      "description": "Current value at left; matching limit at right. Station labels appear on the second line. All selects the highest fresh value. Missing data: -.-- with unit; no enabled rule: \u2014. Rise rates are normalized to m/min."
+    },
+    {
+      "id": 11,
+      "title": "Critical \u00b7 Water level",
+      "type": "canvas",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "sensor-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH paired AS (WITH snapshot AS (\n SELECT r.*, CASE WHEN r.sensor_id='demo-stable' THEN 'WL-001' WHEN r.sensor_id='demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id='demo-elevated' THEN 'WL-003' WHEN r.sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id='quickstart' THEN 'WL-001'\nWHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(r.sensor_id,'-',3) || '-' ||\nCASE split_part(r.sensor_id,'-',4) || '-' || split_part(r.sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station,\n        latest.time AS observed_at, latest.value AS level, latest.location_id,\n        baseline.time AS baseline_at,\n        ((latest.value::numeric-baseline.value::numeric) /\n          NULLIF(extract(epoch FROM latest.time-baseline.time),0) * 60) AS rise,\n        CASE WHEN NOT r.enabled THEN 'Monitoring disabled'\n             WHEN latest.time IS NULL THEN 'No reading'\n             WHEN latest.time < r.updated_at THEN 'Awaiting new reading'\n             WHEN latest.time < now()-make_interval(secs=>r.stale_seconds) THEN 'Stale reading'\n             ELSE 'Fresh' END AS reading_status\n FROM configuration.alert_rules r\n LEFT JOIN LATERAL (\n   SELECT time,value,location_id FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND time<=now() AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n   ORDER BY time DESC, observation_id LIMIT 1\n ) latest ON true\n LEFT JOIN LATERAL (\n   SELECT time,value FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n     AND time>=latest.time-make_interval(secs=>r.rise_window_seconds)\n     AND time<=latest.time-make_interval(secs=>r.rise_min_seconds)\n   ORDER BY time, observation_id LIMIT 1\n ) baseline ON true\n WHERE r.sensor_id IN (${sensor:sqlstring})\n), candidates AS (\n SELECT *, CASE WHEN reading_status='Fresh' THEN level::numeric END AS current_value,\n        level_critical::numeric AS limit_value,\n        CASE WHEN reading_status='Fresh' AND 'level'='rise' AND baseline_at IS NULL\n             THEN 'No rise baseline' ELSE reading_status END AS status\n FROM snapshot WHERE enabled\n), winner AS (\n SELECT * FROM candidates\n ORDER BY current_value DESC NULLS LAST, sensor_id LIMIT 1\n)\nSELECT CASE WHEN side.position=0 THEN\n         coalesce('Current' || chr(10) || winner.station ||\n           CASE WHEN winner.status='Fresh' THEN '' ELSE chr(10) || winner.status END,\n           'Current' || chr(10) || 'No enabled rule')\n       ELSE coalesce('Limit' || chr(10) || winner.station, 'Limit' || chr(10) || 'Not configured') END AS name,\n       CASE WHEN side.position=0 THEN winner.current_value ELSE winner.limit_value END AS value,\n       winner.sensor_id, winner.location_id\nFROM (VALUES (0),(1)) side(position) LEFT JOIN winner ON true ORDER BY side.position), card_values AS (\n SELECT max(value) FILTER (WHERE name LIKE 'Current%') AS current_value,\n        max(value) FILTER (WHERE name LIKE 'Limit%') AS limit_value,\n        max(sensor_id) AS sensor_id,\n        max(split_part(name,chr(10),3)) AS reason\n FROM paired\n)\nSELECT coalesce(CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END,'\u2014') AS station,\n CASE WHEN sensor_id IS NULL THEN '\u2014'\n      WHEN current_value IS NULL THEN '-.-- m'\n      ELSE round(current_value,2)::text || ' m' END AS current_display,\n CASE WHEN limit_value IS NULL THEN '\u2014'\n      ELSE round(limit_value,2)::text || ' m' END AS limit_display,\n CASE WHEN sensor_id IS NULL THEN 'Not configured' ELSE coalesce(nullif(reason,''),'Fresh reading') END AS status\nFROM card_values",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "inlineEditing": false,
+        "panZoom": true,
+        "zoomToContent": true,
+        "showAdvancedTypes": false,
+        "tooltip": {
+          "mode": "none"
+        },
+        "root": {
+          "name": "Monitoring card",
+          "type": "frame",
+          "elements": [
+            {
+              "name": "Current heading",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 16,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "fixed",
+                  "field": "",
+                  "fixed": "Current"
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 0,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Current station",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 14,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "station",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 30,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Current value",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 27,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "current_display",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 65,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit heading",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 16,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "fixed",
+                  "field": "",
+                  "fixed": "Limit"
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 0,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit station",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 14,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "station",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 30,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit value",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 27,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "limit_display",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 65,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Reading status",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 12,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "status",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 105,
+                "width": 370,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            }
+          ],
+          "placement": {
+            "width": 370,
+            "height": 137
+          },
+          "background": {
+            "color": {
+              "fixed": "#A82020"
+            }
+          }
+        }
+      },
+      "description": "Current value at left; matching limit at right. Station labels appear on the second line. All selects the highest fresh value. Missing data: -.-- with unit; no enabled rule: \u2014. Rise rates are normalized to m/min."
+    },
+    {
+      "id": 12,
+      "title": "Warning \u00b7 Rise rate",
+      "type": "canvas",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "sensor-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH paired AS (WITH snapshot AS (\n SELECT r.*, CASE WHEN r.sensor_id='demo-stable' THEN 'WL-001' WHEN r.sensor_id='demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id='demo-elevated' THEN 'WL-003' WHEN r.sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id='quickstart' THEN 'WL-001'\nWHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(r.sensor_id,'-',3) || '-' ||\nCASE split_part(r.sensor_id,'-',4) || '-' || split_part(r.sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station,\n        latest.time AS observed_at, latest.value AS level, latest.location_id,\n        baseline.time AS baseline_at,\n        ((latest.value::numeric-baseline.value::numeric) /\n          NULLIF(extract(epoch FROM latest.time-baseline.time),0) * 60) AS rise,\n        CASE WHEN NOT r.enabled THEN 'Monitoring disabled'\n             WHEN latest.time IS NULL THEN 'No reading'\n             WHEN latest.time < r.updated_at THEN 'Awaiting new reading'\n             WHEN latest.time < now()-make_interval(secs=>r.stale_seconds) THEN 'Stale reading'\n             ELSE 'Fresh' END AS reading_status\n FROM configuration.alert_rules r\n LEFT JOIN LATERAL (\n   SELECT time,value,location_id FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND time<=now() AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n   ORDER BY time DESC, observation_id LIMIT 1\n ) latest ON true\n LEFT JOIN LATERAL (\n   SELECT time,value FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n     AND time>=latest.time-make_interval(secs=>r.rise_window_seconds)\n     AND time<=latest.time-make_interval(secs=>r.rise_min_seconds)\n   ORDER BY time, observation_id LIMIT 1\n ) baseline ON true\n WHERE r.sensor_id IN (${sensor:sqlstring})\n), candidates AS (\n SELECT *, CASE WHEN reading_status='Fresh' THEN rise::numeric END AS current_value,\n        rise_warning::numeric*60/rise_period_seconds AS limit_value,\n        CASE WHEN reading_status='Fresh' AND 'rise'='rise' AND baseline_at IS NULL\n             THEN 'No rise baseline' ELSE reading_status END AS status\n FROM snapshot WHERE enabled\n), winner AS (\n SELECT * FROM candidates\n ORDER BY current_value DESC NULLS LAST, sensor_id LIMIT 1\n)\nSELECT CASE WHEN side.position=0 THEN\n         coalesce('Current' || chr(10) || winner.station ||\n           CASE WHEN winner.status='Fresh' THEN '' ELSE chr(10) || winner.status END,\n           'Current' || chr(10) || 'No enabled rule')\n       ELSE coalesce('Limit' || chr(10) || winner.station, 'Limit' || chr(10) || 'Not configured') END AS name,\n       CASE WHEN side.position=0 THEN winner.current_value ELSE winner.limit_value END AS value,\n       winner.sensor_id, winner.location_id\nFROM (VALUES (0),(1)) side(position) LEFT JOIN winner ON true ORDER BY side.position), card_values AS (\n SELECT max(value) FILTER (WHERE name LIKE 'Current%') AS current_value,\n        max(value) FILTER (WHERE name LIKE 'Limit%') AS limit_value,\n        max(sensor_id) AS sensor_id,\n        max(split_part(name,chr(10),3)) AS reason\n FROM paired\n)\nSELECT coalesce(CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END,'\u2014') AS station,\n CASE WHEN sensor_id IS NULL THEN '\u2014'\n      WHEN current_value IS NULL THEN '-.-- m/min'\n      ELSE round(current_value,3)::text || ' m/min' END AS current_display,\n CASE WHEN limit_value IS NULL THEN '\u2014'\n      ELSE round(limit_value,3)::text || ' m/min' END AS limit_display,\n CASE WHEN sensor_id IS NULL THEN 'Not configured' ELSE coalesce(nullif(reason,''),'Fresh reading') END AS status\nFROM card_values",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "inlineEditing": false,
+        "panZoom": true,
+        "zoomToContent": true,
+        "showAdvancedTypes": false,
+        "tooltip": {
+          "mode": "none"
+        },
+        "root": {
+          "name": "Monitoring card",
+          "type": "frame",
+          "elements": [
+            {
+              "name": "Current heading",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 16,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "fixed",
+                  "field": "",
+                  "fixed": "Current"
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 0,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Current station",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 14,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "station",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 30,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Current value",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 27,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "current_display",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 65,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit heading",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 16,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "fixed",
+                  "field": "",
+                  "fixed": "Limit"
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 0,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit station",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 14,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "station",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 30,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit value",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 27,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "limit_display",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 65,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Reading status",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 12,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "status",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 105,
+                "width": 370,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            }
+          ],
+          "placement": {
+            "width": 370,
+            "height": 137
+          },
+          "background": {
+            "color": {
+              "fixed": "#A65300"
+            }
+          }
+        }
+      },
+      "description": "Current value at left; matching limit at right. Station labels appear on the second line. All selects the highest fresh value. Missing data: -.-- with unit; no enabled rule: \u2014. Rise rates are normalized to m/min."
+    },
+    {
+      "id": 13,
+      "title": "Critical \u00b7 Rise rate",
+      "type": "canvas",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "sensor-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH paired AS (WITH snapshot AS (\n SELECT r.*, CASE WHEN r.sensor_id='demo-stable' THEN 'WL-001' WHEN r.sensor_id='demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id='demo-elevated' THEN 'WL-003' WHEN r.sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id='quickstart' THEN 'WL-001'\nWHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(r.sensor_id,'-',3) || '-' ||\nCASE split_part(r.sensor_id,'-',4) || '-' || split_part(r.sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station,\n        latest.time AS observed_at, latest.value AS level, latest.location_id,\n        baseline.time AS baseline_at,\n        ((latest.value::numeric-baseline.value::numeric) /\n          NULLIF(extract(epoch FROM latest.time-baseline.time),0) * 60) AS rise,\n        CASE WHEN NOT r.enabled THEN 'Monitoring disabled'\n             WHEN latest.time IS NULL THEN 'No reading'\n             WHEN latest.time < r.updated_at THEN 'Awaiting new reading'\n             WHEN latest.time < now()-make_interval(secs=>r.stale_seconds) THEN 'Stale reading'\n             ELSE 'Fresh' END AS reading_status\n FROM configuration.alert_rules r\n LEFT JOIN LATERAL (\n   SELECT time,value,location_id FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND time<=now() AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n   ORDER BY time DESC, observation_id LIMIT 1\n ) latest ON true\n LEFT JOIN LATERAL (\n   SELECT time,value FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n     AND time>=latest.time-make_interval(secs=>r.rise_window_seconds)\n     AND time<=latest.time-make_interval(secs=>r.rise_min_seconds)\n   ORDER BY time, observation_id LIMIT 1\n ) baseline ON true\n WHERE r.sensor_id IN (${sensor:sqlstring})\n), candidates AS (\n SELECT *, CASE WHEN reading_status='Fresh' THEN rise::numeric END AS current_value,\n        rise_critical::numeric*60/rise_period_seconds AS limit_value,\n        CASE WHEN reading_status='Fresh' AND 'rise'='rise' AND baseline_at IS NULL\n             THEN 'No rise baseline' ELSE reading_status END AS status\n FROM snapshot WHERE enabled\n), winner AS (\n SELECT * FROM candidates\n ORDER BY current_value DESC NULLS LAST, sensor_id LIMIT 1\n)\nSELECT CASE WHEN side.position=0 THEN\n         coalesce('Current' || chr(10) || winner.station ||\n           CASE WHEN winner.status='Fresh' THEN '' ELSE chr(10) || winner.status END,\n           'Current' || chr(10) || 'No enabled rule')\n       ELSE coalesce('Limit' || chr(10) || winner.station, 'Limit' || chr(10) || 'Not configured') END AS name,\n       CASE WHEN side.position=0 THEN winner.current_value ELSE winner.limit_value END AS value,\n       winner.sensor_id, winner.location_id\nFROM (VALUES (0),(1)) side(position) LEFT JOIN winner ON true ORDER BY side.position), card_values AS (\n SELECT max(value) FILTER (WHERE name LIKE 'Current%') AS current_value,\n        max(value) FILTER (WHERE name LIKE 'Limit%') AS limit_value,\n        max(sensor_id) AS sensor_id,\n        max(split_part(name,chr(10),3)) AS reason\n FROM paired\n)\nSELECT coalesce(CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END,'\u2014') AS station,\n CASE WHEN sensor_id IS NULL THEN '\u2014'\n      WHEN current_value IS NULL THEN '-.-- m/min'\n      ELSE round(current_value,3)::text || ' m/min' END AS current_display,\n CASE WHEN limit_value IS NULL THEN '\u2014'\n      ELSE round(limit_value,3)::text || ' m/min' END AS limit_display,\n CASE WHEN sensor_id IS NULL THEN 'Not configured' ELSE coalesce(nullif(reason,''),'Fresh reading') END AS status\nFROM card_values",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "inlineEditing": false,
+        "panZoom": true,
+        "zoomToContent": true,
+        "showAdvancedTypes": false,
+        "tooltip": {
+          "mode": "none"
+        },
+        "root": {
+          "name": "Monitoring card",
+          "type": "frame",
+          "elements": [
+            {
+              "name": "Current heading",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 16,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "fixed",
+                  "field": "",
+                  "fixed": "Current"
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 0,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Current station",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 14,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "station",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 30,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Current value",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 27,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "current_display",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 65,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit heading",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 16,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "fixed",
+                  "field": "",
+                  "fixed": "Limit"
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 0,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit station",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 14,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "station",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 30,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Limit value",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 27,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "limit_display",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 190,
+                "top": 65,
+                "width": 180,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "name": "Reading status",
+              "type": "metric-value",
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "size": 12,
+                "color": {
+                  "fixed": "#FFFFFF"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "status",
+                  "fixed": ""
+                }
+              },
+              "placement": {
+                "left": 0,
+                "top": 105,
+                "width": 370,
+                "height": 32
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            }
+          ],
+          "placement": {
+            "width": 370,
+            "height": 137
+          },
+          "background": {
+            "color": {
+              "fixed": "#A82020"
+            }
+          }
+        }
+      },
+      "description": "Current value at left; matching limit at right. Station labels appear on the second line. All selects the highest fresh value. Missing data: -.-- with unit; no enabled rule: \u2014. Rise rates are normalized to m/min."
+    },
     {
       "id": 1,
       "title": "Water levels",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 5,
         "w": 24,
         "h": 10
       },
@@ -27,13 +1156,13 @@
         {
           "refId": "A",
           "format": "time_series",
-          "rawSql": "SELECT time, value, CASE WHEN sensor_id = 'demo-stable' THEN 'WL-001' WHEN sensor_id = 'demo-fluctuating' THEN 'WL-002' WHEN sensor_id = 'demo-elevated' THEN 'WL-003' WHEN sensor_id = 'demo-rapid-rise' THEN 'WL-004' WHEN sensor_id = 'quickstart' THEN 'WL-000' WHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$' THEN 'WL-' || split_part(sensor_id, '-', 3) || '-' || CASE split_part(sensor_id, '-', 4) || '-' || split_part(sensor_id, '-', 5) WHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006' WHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS metric FROM sensor.dashboard_values WHERE $__timeFilter(time) AND sensor_type LIKE 'water-level%' ORDER BY time",
+          "rawSql": "SELECT time,value,CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS metric\nFROM sensor.dashboard_values WHERE $__timeFilter(time) AND sensor_type='water-level' AND unit='m'\nAND sensor_id IN (${sensor:sqlstring}) ORDER BY time",
           "editorMode": "code"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "lengthm"
+          "unit": "suffix: m"
         },
         "overrides": []
       },
@@ -45,9 +1174,9 @@
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 15,
         "w": 24,
-        "h": 10
+        "h": 9
       },
       "datasource": {
         "type": "postgres",
@@ -57,7 +1186,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT time, CASE WHEN sensor_id = 'demo-stable' THEN 'WL-001' WHEN sensor_id = 'demo-fluctuating' THEN 'WL-002' WHEN sensor_id = 'demo-elevated' THEN 'WL-003' WHEN sensor_id = 'demo-rapid-rise' THEN 'WL-004' WHEN sensor_id = 'quickstart' THEN 'WL-000' WHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$' THEN 'WL-' || split_part(sensor_id, '-', 3) || '-' || CASE split_part(sensor_id, '-', 4) || '-' || split_part(sensor_id, '-', 5) WHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006' WHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS station, sensor_id, sensor_type, value, unit, longitude, latitude, location_id, metadata FROM sensor.dashboard_values ORDER BY time DESC LIMIT 100",
+          "rawSql": "SELECT time,CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS station,\nsensor_id,sensor_type,value,unit,longitude,latitude,location_id,metadata\nFROM sensor.dashboard_values WHERE $__timeFilter(time) AND sensor_id IN (${sensor:sqlstring})\nORDER BY time DESC LIMIT 100",
           "editorMode": "code"
         }
       ],
@@ -86,9 +1215,9 @@
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 24,
         "w": 24,
-        "h": 8
+        "h": 9
       },
       "datasource": {
         "type": "postgres",
@@ -98,7 +1227,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT a.id, CASE WHEN r.sensor_id = 'demo-stable' THEN 'WL-001' WHEN r.sensor_id = 'demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id = 'demo-elevated' THEN 'WL-003' WHEN r.sensor_id = 'demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id = 'quickstart' THEN 'WL-000' WHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$' THEN 'WL-' || split_part(r.sensor_id, '-', 3) || '-' || CASE split_part(r.sensor_id, '-', 4) || '-' || split_part(r.sensor_id, '-', 5) WHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006' WHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station, location.location_id, r.sensor_id, a.kind, a.severity, a.opened_at, a.acknowledged_at, a.acknowledged_by FROM alerting.alerts a JOIN configuration.alert_rules r ON r.id=a.rule_id LEFT JOIN LATERAL (SELECT location_id FROM sensor.dashboard_values WHERE sensor_id=r.sensor_id ORDER BY time DESC LIMIT 1) location ON true WHERE a.resolved_at IS NULL ORDER BY a.opened_at DESC LIMIT 100",
+          "rawSql": "SELECT a.id,CASE WHEN r.sensor_id='demo-stable' THEN 'WL-001' WHEN r.sensor_id='demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id='demo-elevated' THEN 'WL-003' WHEN r.sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id='quickstart' THEN 'WL-001'\nWHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(r.sensor_id,'-',3) || '-' ||\nCASE split_part(r.sensor_id,'-',4) || '-' || split_part(r.sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station,\nlocation.location_id,r.sensor_id,a.kind,a.severity,a.opened_at,a.acknowledged_at,a.acknowledged_by\nFROM alerting.alerts a JOIN configuration.alert_rules r ON r.id=a.rule_id\nLEFT JOIN LATERAL (SELECT location_id FROM sensor.dashboard_values WHERE sensor_id=r.sensor_id\nORDER BY time DESC LIMIT 1) location ON true\nWHERE a.resolved_at IS NULL AND r.sensor_id IN (${sensor:sqlstring}) ORDER BY a.opened_at DESC LIMIT 100",
           "editorMode": "code"
         }
       ],
@@ -119,15 +1248,16 @@
           }
         ]
       },
-      "options": {}
+      "options": {},
+      "description": "Current unresolved alerts for the selected sensors; independent of the historical time range."
     },
     {
       "id": 4,
-      "title": "Alert evaluator health",
+      "title": "Monitoring status",
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 33,
         "w": 24,
         "h": 8
       },
@@ -139,7 +1269,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT last_success_at, schedule_seconds, last_success_at > now() - make_interval(secs => schedule_seconds * 3) AS evaluator_healthy FROM alerting.evaluator_status",
+          "rawSql": "WITH snapshot AS (\n SELECT r.*, CASE WHEN r.sensor_id='demo-stable' THEN 'WL-001' WHEN r.sensor_id='demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id='demo-elevated' THEN 'WL-003' WHEN r.sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id='quickstart' THEN 'WL-001'\nWHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(r.sensor_id,'-',3) || '-' ||\nCASE split_part(r.sensor_id,'-',4) || '-' || split_part(r.sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station,\n        latest.time AS observed_at, latest.value AS level, latest.location_id,\n        baseline.time AS baseline_at,\n        ((latest.value::numeric-baseline.value::numeric) /\n          NULLIF(extract(epoch FROM latest.time-baseline.time),0) * 60) AS rise,\n        CASE WHEN NOT r.enabled THEN 'Monitoring disabled'\n             WHEN latest.time IS NULL THEN 'No reading'\n             WHEN latest.time < r.updated_at THEN 'Awaiting new reading'\n             WHEN latest.time < now()-make_interval(secs=>r.stale_seconds) THEN 'Stale reading'\n             ELSE 'Fresh' END AS reading_status\n FROM configuration.alert_rules r\n LEFT JOIN LATERAL (\n   SELECT time,value,location_id FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND time<=now() AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n   ORDER BY time DESC, observation_id LIMIT 1\n ) latest ON true\n LEFT JOIN LATERAL (\n   SELECT time,value FROM sensor.dashboard_values\n   WHERE sensor_id=r.sensor_id AND sensor_type='water-level' AND unit='m'\n     AND value>'-Infinity'::float8 AND value<'Infinity'::float8\n     AND time>=latest.time-make_interval(secs=>r.rise_window_seconds)\n     AND time<=latest.time-make_interval(secs=>r.rise_min_seconds)\n   ORDER BY time, observation_id LIMIT 1\n ) baseline ON true\n WHERE r.sensor_id IN (${sensor:sqlstring})\n)\nSELECT snapshot.station,snapshot.location_id,snapshot.enabled,snapshot.reading_status,\nsnapshot.observed_at,snapshot.baseline_at,e.last_success_at,e.schedule_seconds,\ne.last_success_at>now()-make_interval(secs=>e.schedule_seconds*3) AS evaluator_healthy\nFROM snapshot CROSS JOIN alerting.evaluator_status e ORDER BY snapshot.sensor_id",
           "editorMode": "code"
         }
       ],
@@ -147,7 +1277,8 @@
         "defaults": {},
         "overrides": []
       },
-      "options": {}
+      "options": {},
+      "description": "Selected sensors with configured rules. The evaluator heartbeat is global; freshness and baseline availability are sensor-specific."
     }
   ]
 }

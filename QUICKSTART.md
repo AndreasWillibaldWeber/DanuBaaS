@@ -46,3 +46,7 @@ using the separate key in `deploy/secrets/alert_admin_key`. The ingestion key ca
 change thresholds. See [alerting.md](docs/alerting.md) for parameters, API operations,
 health checks and optional webhook delivery. Demo thresholds require site calibration
 before operational use.
+
+The [Grafana monitoring dashboard](docs/monitoring-dashboard.md) provides four
+current/limit cards and a sensor selector that filters charts, observations, alerts
+and monitoring status.

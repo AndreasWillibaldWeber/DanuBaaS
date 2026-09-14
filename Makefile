@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := test
-.PHONY: test integration vet build fmt dev dev-test-data prod prod-check test-deploy test-e2e test-security
+.PHONY: test integration vet build fmt dev dev-test-data prod prod-check test-deploy test-e2e test-security test-grafana
 
 # These commands never delete volumes or rotate existing credentials.
 dev:
@@ -43,3 +43,8 @@ test-security:
 	sh -n security/debian/install-packages.sh
 	sh -n security/debian/audit.sh
 	sh -n security/debian/tests/network_policy.sh
+
+# Requires the development database; uses rolled-back temporary SQL fixtures.
+test-grafana:
+	python3 deploy/grafana/build_dashboard.py --check
+	python3 deploy/grafana/verify_dashboard.py
