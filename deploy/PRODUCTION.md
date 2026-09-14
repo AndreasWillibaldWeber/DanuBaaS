@@ -27,6 +27,12 @@ the certificate supplied below. The editor remains bound to loopback on port 188
 Development and production use separate project names and volumes, but publish
 the same ports; stop development before running production on the same host.
 
+Set `ALERT_EVALUATION_SECONDS` (1–3600) and `ALERT_RULES_FILE` to an absolute
+readable JSON file outside the repository. Start with
+`alerts.production.example.json` (an empty array), or supply calibrated rules in
+the format of `alerts.dev.example.json`. Startup loads missing rules only;
+existing API-managed rules are preserved. See [alerting](../docs/alerting.md).
+
 ## Secret files
 
 Provision these files in `SECRETS_DIR` through your normal secret-management process:
@@ -38,6 +44,8 @@ Provision these files in `SECRETS_DIR` through your normal secret-management pro
 | `db_grafana_password` | Independent random secret, at least 32 bytes |
 | `db_telegraf_password` | Independent random secret, at least 32 bytes |
 | `api_key` | Independent random secret, at least 32 ASCII bytes |
+| `alert_admin_key` | Separate random secret, at least 32 ASCII bytes; administrative alert operations |
+| `alert_webhook_url` | HTTPS receiver URL, or an empty file to disable external delivery |
 | `mqtt_node_red_password` | Independent random secret, at least 32 bytes |
 | `mqtt_demo_password` | Independent random secret, at least 32 bytes; the supplied gateway account remains configured |
 | `mqtt_telegraf_password` | Independent random secret, at least 32 bytes |
@@ -48,7 +56,8 @@ Provision these files in `SECRETS_DIR` through your normal secret-management pro
 | `caddy_password_hash` | bcrypt hash, cost 12 or higher |
 
 Files contain one UTF-8 value, optionally followed by one newline. Empty, short,
-obvious placeholder, and reused values are rejected. Hash syntax and cost are
+obvious placeholder, and reused credential values are rejected. Only the optional
+`alert_webhook_url` file may be empty. Hash syntax and cost are
 checked; the checker cannot assess the strength of the underlying password.
 Store those passwords in your password manager. No password values are provided
 in the production template or printed by the checker.

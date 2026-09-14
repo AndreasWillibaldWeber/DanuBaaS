@@ -1,3 +1,9 @@
+> Update: migration `004` now implements configurable warning/critical water-level
+> and rise-rate rules, stale-data detection, persistent history, acknowledgment and
+> optional webhook delivery. See [alerting.md](alerting.md). Statements below that
+> describe these features as absent refer to the earlier assessment. Calibration,
+> intervention tracking and field evaluation remain outstanding.
+
 # Report–implementation alignment review
 
 Reviewed the active LaTeX chapters in `DBE_Digital_Project_Workshop`, both PDF

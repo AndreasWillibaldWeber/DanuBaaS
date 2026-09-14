@@ -37,7 +37,11 @@ instance. The tested compiler for this workspace is Go 1.26.8.
 ```sh
 export DATABASE_URL='postgres://postgres:development-password@localhost:5432/sensors?sslmode=disable'
 go run ./cmd/sensor-api migrate
-export API_KEY='replace-with-at-least-32-random-bytes'
+export ALERT_RULES_FILE=deploy/alerts.dev.example.json
+export ALERT_EVALUATION_SECONDS=30
+go run ./cmd/sensor-api configure-alerts
+export API_KEY="$(openssl rand -hex 32)"
+export ALERT_ADMIN_KEY="$(openssl rand -hex 32)"
 go run ./cmd/sensor-api
 ```
 
@@ -211,6 +215,10 @@ policy before deployment at scale.
 | Setting | Default / behavior |
 | --- | --- |
 | `API_KEY` or `API_KEY_FILE` | Required for serving; minimum 32 bytes |
+| `ALERT_ADMIN_KEY` or `ALERT_ADMIN_KEY_FILE` | Required for serving; independent key, minimum 32 bytes |
+| `ALERT_WEBHOOK_URL` or `ALERT_WEBHOOK_URL_FILE` | Optional HTTPS notification receiver; empty file disables delivery |
+| `ALERT_RULES_FILE` | Initial rule array for `configure-alerts`; existing rules are preserved |
+| `ALERT_EVALUATION_SECONDS` | Required for `configure-alerts`; interval 1–3600 seconds |
 | `DATABASE_URL` | Optional complete PostgreSQL connection string |
 | `DB_HOST`, `DB_PORT`, `DB_NAME` | `localhost`, `5432`, `sensors` |
 | `DB_USER` | `sensor_api` |
@@ -256,9 +264,12 @@ suite from this repository root.
 
 ## Scope
 
-This is a demonstrator of authenticated ingestion and retrieval. It does not claim
+This is a demonstrator of authenticated ingestion, retrieval, and configurable
+water-level alerts. [Alerting](docs/alerting.md) includes warning/critical level
+and rise-rate parameters, PostgreSQL evaluation, history, acknowledgment,
+optional webhooks and setup integration. It does not claim
 flood forecasting, guaranteed delivery through the Node-RED MQTT adapter, high
-availability, per-sensor API-key scopes, or a completed operational alarm workflow.
+availability, per-sensor API-key scopes, or field-validated flood-warning performance.
 Those capabilities require separate acceptance criteria and implementation.
 
 The imported backend, deployment, tests, and documentation retain their

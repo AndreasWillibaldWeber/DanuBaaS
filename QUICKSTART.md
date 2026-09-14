@@ -11,6 +11,7 @@ make dev
 
 This installs dependencies, generates local credentials and certificates, builds
 and starts all services, and verifies a sample Node-RED write and database read.
+It also loads the development alert parameters and verifies the PostgreSQL evaluator.
 Rerunning preserves credentials, saved flows, and database volumes.
 
 Trust `deploy/certs/caddy-root.crt` in your browser/OS. Read your passwords locally
@@ -30,3 +31,13 @@ Stop services with `docker compose -f deploy/compose.yaml down`; data is retaine
 and [supply the required configuration, secrets, and MQTT certificates](deploy/PRODUCTION.md).
 Run `make prod-check` to validate, then `make prod` to start. Neither command
 generates credentials; missing or invalid configuration prevents startup.
+
+## Alert parameters
+
+`make dev` creates `deploy/alerts.json` with demonstration warning/critical water
+levels and rise rates for `quickstart`. Later runs preserve API edits. View active
+alerts in Grafana and configure rules through `https://api.localhost/api/v1/alert-rules`
+using the separate key in `deploy/secrets/alert_admin_key`. The ingestion key cannot
+change thresholds. See [alerting.md](docs/alerting.md) for parameters, API operations,
+health checks and optional webhook delivery. Demo thresholds require site calibration
+before operational use.

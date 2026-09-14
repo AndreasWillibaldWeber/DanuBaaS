@@ -67,6 +67,7 @@ deployment. For an initialized workspace, use [the upgrade steps](#upgrade-an-ex
 npm ci --prefix deploy/nodered
 node deploy/scripts/setup.mjs
 cp deploy/.env.example deploy/.env
+cp deploy/alerts.dev.example.json deploy/alerts.json
 mkdir -p deploy/backups
 docker compose -f deploy/compose.yaml config --quiet
 docker compose -f deploy/compose.yaml up --build -d
@@ -114,10 +115,14 @@ and grants before starting the updated ingestion services:
 
 ```sh
 node deploy/scripts/add-telegraf-secrets.mjs
+node deploy/scripts/add-alert-secrets.mjs
+# Only create the initial rule file if it does not already exist.
+test -f deploy/alerts.json || cp deploy/alerts.dev.example.json deploy/alerts.json
 docker compose --env-file deploy/.env -f deploy/compose.yaml build
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d timescaledb
 docker compose --env-file deploy/.env -f deploy/compose.yaml run --rm migrate
 docker compose --env-file deploy/.env -f deploy/compose.yaml run --rm --no-deps grants
+docker compose --env-file deploy/.env -f deploy/compose.yaml run --rm --no-deps configure-alerts
 docker compose --env-file deploy/.env -f deploy/compose.yaml run --rm --no-deps mosquitto-init
 docker compose --env-file deploy/.env -f deploy/compose.yaml restart mosquitto
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d
@@ -399,7 +404,7 @@ messages. It leaves test observations in the disposable database. Its temporary
 broker allows anonymous connections; deployed Mosquitto uses the configured TLS,
 passwords, and ACLs, which require a separate container smoke test.
 
-**Workspace verification status:** Go unit/race tests, fuzzing, static analysis,
+**Earlier ingestion verification status (before alerting):** Go unit/race tests, fuzzing, static analysis,
 Node-RED session tests, real Node-RED/FlowFuse integration, Caddy integration,
 and modern Compose configuration validation have been run. Database contract and
 MQTT adapter tests passed on temporary PostgreSQL 16, including restricted-role
@@ -412,9 +417,11 @@ password). These checks must pass before treating this as a verified deployment.
 
 ## Scope and sources
 
-The environment demonstrates ingestion, retrieval, and independently protected
-browser dashboards. It does not yet implement configurable flood rules, persistent
-alarm acknowledgment/history, or intervention tracking from the broader report.
+The environment demonstrates ingestion, retrieval, independently protected
+browser dashboards, and [database-driven alerting](../docs/alerting.md). Warning
+and critical level/rise rules, configuration versions, acknowledgment/history,
+and optional webhook delivery are implemented. Intervention tracking and field
+evaluation remain outside the implementation.
 Do not present it as a finished flood-warning installation.
 
 Implementation references:
@@ -428,3 +435,13 @@ Implementation references:
 The imported code/configuration retains its [Apache-2.0 license](../LICENSES/Apache-2.0.txt).
 See [NOTICE](../NOTICE) for the repository's license scope. The original report
 and images are separate material.
+
+## Alert setup and upgrades
+
+`make dev` provisions new alert secrets without rotating old credentials, creates
+`alerts.json` if missing, applies migration `004`, and runs `configure-alerts`
+before the API becomes ready. The initial rule file inserts missing rules only;
+existing rule edits and disabled flags are preserved. `make prod` uses the explicit
+production rule file and scheduler interval. Manual Compose users must supply
+`alerts.json`, `alert_admin_key` and `alert_webhook_url` before starting. See
+[alerting](../docs/alerting.md) for the API, rate units and notification semantics.

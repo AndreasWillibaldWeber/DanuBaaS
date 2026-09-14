@@ -7,6 +7,8 @@ diagnostics. Production validation finishes before any Docker command is run.
 import argparse
 import http.client
 import json
+import math
+from urllib.parse import urlsplit
 import os
 from pathlib import Path
 import re
@@ -21,7 +23,7 @@ from datetime import datetime, timezone
 
 DEPLOY = Path(__file__).resolve().parents[1]
 SECRET_NAMES = (
-    'db_admin_password', 'db_api_password', 'db_grafana_password',
+    'alert_admin_key', 'db_admin_password', 'db_api_password', 'db_grafana_password',
     'db_telegraf_password', 'api_key', 'mqtt_node_red_password',
     'mqtt_demo_password', 'mqtt_telegraf_password', 'node_red_credential_secret',
     'grafana_admin_password', 'node_red_admin_password_hash',
@@ -29,7 +31,7 @@ SECRET_NAMES = (
 )
 WEB_HOSTS = ('API_HOST', 'GRAFANA_HOST', 'NODE_RED_HOST', 'NODE_RED_API_HOST')
 USERS = ('CADDY_USER', 'DASHBOARD_USER', 'NODE_RED_ADMIN_USER', 'GRAFANA_ADMIN_USER')
-CONFIG_KEYS = (*WEB_HOSTS, *USERS, 'MQTT_HOST', 'INGESTION_BACKEND', 'SECRETS_DIR', 'MQTT_CERTS_DIR')
+CONFIG_KEYS = (*WEB_HOSTS, *USERS, 'MQTT_HOST', 'INGESTION_BACKEND', 'SECRETS_DIR', 'MQTT_CERTS_DIR', 'ALERT_EVALUATION_SECONDS', 'ALERT_RULES_FILE')
 PLACEHOLDER = re.compile(r'changeme|change[-_ ]?me|replace|placeholder|your[-_ ]|example|todo', re.I)
 
 
@@ -117,7 +119,7 @@ def check_secrets(directory, production):
     seen = set()
     for name in SECRET_NAMES:
         value = read_secret(directory, name)
-        if name == 'api_key' and not value.isascii():
+        if name in ('api_key', 'alert_admin_key') and not value.isascii():
             raise ConfigurationError('api_key: use at least 32 ASCII bytes so Go and Node-RED interpret the key identically')
         if production and not (directory / name).stat().st_mode & 0o004:
             raise ConfigurationError(f'{name}: mounted secret must be readable by service UIDs; use mode 444 inside the private secrets directory')
@@ -130,6 +132,22 @@ def check_secrets(directory, production):
         if production and value in seen:
             raise ConfigurationError(f'{name}: secrets must not be reused between services')
         seen.add(value)
+    if read_secret(directory, 'api_key') == read_secret(directory, 'alert_admin_key'):
+        raise ConfigurationError('alert_admin_key must differ from api_key.')
+    webhook = directory / 'alert_webhook_url'
+    if not webhook.is_file() or webhook.stat().st_size > 4096:
+        raise ConfigurationError('alert_webhook_url: supply a readable file; leave it empty to disable delivery')
+    try:
+        raw = webhook.read_text().strip()
+        if any(c in raw for c in '\r\n\x00'):
+            raise ValueError()
+        parsed = urlsplit(raw)
+        if raw and (parsed.scheme != 'https' or not parsed.hostname or parsed.username is not None or parsed.fragment):
+            raise ValueError()
+    except (OSError, UnicodeError, ValueError):
+        raise ConfigurationError('alert_webhook_url must be empty or an HTTPS URL without credentials or fragment') from None
+    if production and not webhook.stat().st_mode & 0o004:
+        raise ConfigurationError('alert_webhook_url must be readable by the service UID (mode 444).')
 
 
 def check_certificate(directory, host, production=False):
@@ -151,6 +169,62 @@ def check_certificate(directory, host, production=False):
         run(['openssl', 'verify', '-partial_chain', '-trusted', str(certificate), *hostname, str(certificate)], capture=True)
     except subprocess.CalledProcessError:
         raise ConfigurationError('MQTT certificate/key invalid, expired, expires within 24 hours, or does not cover MQTT_HOST.') from None
+
+
+def check_alert_configuration(values, deploy):
+    try:
+        seconds = int(values['ALERT_EVALUATION_SECONDS'])
+        if not 1 <= seconds <= 3600:
+            raise ValueError()
+    except (KeyError, ValueError):
+        raise ConfigurationError('ALERT_EVALUATION_SECONDS must be an integer between 1 and 3600') from None
+    file = Path(values['ALERT_RULES_FILE'])
+    if not file.is_absolute():
+        file = deploy / file
+    try:
+        if file.stat().st_size > 1024 * 1024:
+            raise ValueError()
+        def unique_object(pairs):
+            out = {}
+            for key, value in pairs:
+                if key in out:
+                    raise ValueError()
+                out[key] = value
+            return out
+        rules = json.loads(file.read_text(), object_pairs_hook=unique_object)
+        if not isinstance(rules, list) or len(rules) > 1000:
+            raise ValueError()
+        expected = {'id', 'sensor_id', 'enabled', 'level_warning', 'level_critical',
+                    'rise_warning', 'rise_critical', 'rise_period_seconds', 'rise_window_seconds',
+                    'rise_min_seconds', 'level_hysteresis', 'rise_hysteresis', 'hold_seconds',
+                    'stale_seconds', 'version'}
+        identifiers, sensors = set(), set()
+        for rule in rules:
+            if not isinstance(rule, dict) or set(rule) != expected:
+                raise ValueError()
+            for key in ('id', 'sensor_id'):
+                if not isinstance(rule[key], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}', rule[key]):
+                    raise ValueError()
+            if rule['id'] in identifiers or rule['sensor_id'] in sensors or type(rule['enabled']) is not bool:
+                raise ValueError()
+            identifiers.add(rule['id']); sensors.add(rule['sensor_id'])
+            for key in ('level_warning', 'level_critical', 'rise_warning', 'rise_critical', 'level_hysteresis', 'rise_hysteresis'):
+                if type(rule[key]) not in (int, float) or not math.isfinite(rule[key]):
+                    raise ValueError()
+            for key in ('rise_period_seconds', 'rise_window_seconds', 'rise_min_seconds', 'hold_seconds', 'stale_seconds', 'version'):
+                if type(rule[key]) is not int:
+                    raise ValueError()
+            if not (rule['level_warning'] < rule['level_critical'] and 0 < rule['rise_warning'] < rule['rise_critical']
+                    and 0 <= rule['level_hysteresis'] < rule['level_critical'] - rule['level_warning']
+                    and 0 <= rule['rise_hysteresis'] < rule['rise_critical'] - rule['rise_warning']
+                    and 1 <= rule['rise_period_seconds'] <= 86400
+                    and 1 <= rule['rise_min_seconds'] < rule['rise_window_seconds'] <= 86400
+                    and rule['rise_min_seconds'] <= rule['stale_seconds'] <= 604800
+                    and 0 <= rule['hold_seconds'] <= rule['stale_seconds'] and rule['version'] == 0):
+                raise ValueError()
+    except (OSError, ValueError, TypeError, KeyError):
+        raise ConfigurationError('ALERT_RULES_FILE must contain a valid initial-rule JSON array; see alerts.dev.example.json for the format') from None
+    return rules
 
 
 def validate_production(deploy=None):
@@ -175,6 +249,10 @@ def validate_production(deploy=None):
         directory = Path(values[key])
         if not directory.is_absolute() or directory.resolve().is_relative_to(deploy.parent.resolve()):
             raise ConfigurationError(f'{key}: use an absolute directory outside the repository')
+    rule_file = Path(values['ALERT_RULES_FILE'])
+    if not rule_file.is_absolute() or rule_file.resolve().is_relative_to(deploy.parent.resolve()):
+        raise ConfigurationError('ALERT_RULES_FILE must be an absolute file outside the repository.')
+    check_alert_configuration(values, deploy)
     check_secrets(Path(values['SECRETS_DIR']), production=True)
     check_certificate(Path(values['MQTT_CERTS_DIR']), values['MQTT_HOST'], production=True)
     return values
@@ -201,6 +279,14 @@ def prepare_development():
         raise ConfigurationError('Incomplete development setup: restore missing secrets/certificates; existing credentials were preserved.')
     else:
         run(['node', str(DEPLOY / 'scripts/add-telegraf-secrets.mjs')])
+    run(['node', str(DEPLOY / 'scripts/add-alert-secrets.mjs')])
+    if values['ALERT_RULES_FILE'] != './alerts.json':
+        raise ConfigurationError('Development uses ALERT_RULES_FILE=./alerts.json.')
+    rules_file = DEPLOY / 'alerts.json'
+    if not rules_file.exists():
+        with rules_file.open('x') as target:
+            target.write((DEPLOY / 'alerts.dev.example.json').read_text())
+    check_alert_configuration(values, DEPLOY)
     check_secrets(DEPLOY / 'secrets', production=False)
     check_certificate(DEPLOY / 'certs/mqtt', 'mqtt.localhost')
     (DEPLOY / 'backups').mkdir(exist_ok=True)
@@ -264,6 +350,26 @@ def smoke_development(backend='api'):
     raise ConfigurationError('Development write/read did not succeed; inspect node-red, api, and telegraf logs. Volumes and credentials were preserved.')
 
 
+def smoke_alerting():
+    context = ssl.create_default_context(cafile=str(DEPLOY / 'certs/caddy-root.crt'))
+    key = read_secret(DEPLOY / 'secrets', 'alert_admin_key')
+    for attempt in range(60):
+        connection = LocalHTTPSConnection('api.localhost', 443, context=context, timeout=3)
+        try:
+            connection.request('GET', '/api/v1/alerting-status', headers={'X-API-Key': key})
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+            if response.status == 200 and payload.get('healthy'):
+                print('Verified alert API and successful scheduled database evaluation.')
+                return
+        except (OSError, ValueError, http.client.HTTPException):
+            pass
+        finally:
+            connection.close()
+        time.sleep(1)
+    raise ConfigurationError('Alert evaluator did not become healthy; inspect the configure-alerts service and TimescaleDB job errors.')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('dev', 'prod', 'prod-check'))
@@ -281,6 +387,7 @@ def main(argv=None):
         compose(mode, 'up', '--build', '--wait', '--wait-timeout', '180')
         if mode == 'dev':
             smoke_development(values['INGESTION_BACKEND'])
+            smoke_alerting()
             print('Grafana: https://grafana.localhost | Node-RED: https://nodered.localhost/dashboard')
             print('Editor: http://127.0.0.1:1880/admin')
             print('Credentials: deploy/secrets/operator-credentials.json (values are never printed)')

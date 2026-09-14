@@ -29,11 +29,16 @@ class EnvironmentContract(unittest.TestCase):
         self.certs.mkdir()
         self.values = {key: 'operator' for key in env.USERS}
         self.values.update(dict(zip(env.WEB_HOSTS, ('api.dbe.org', 'grafana.dbe.org', 'dashboard.dbe.org', 'flows.dbe.org'))))
+        self.rules = self.root / 'alerts.json'
+        self.rules.write_text('[]')
+        shutil.copyfile(env.DEPLOY / 'alerts.dev.example.json', self.deploy / 'alerts.dev.example.json')
+        self.values.update(ALERT_RULES_FILE=str(self.rules), ALERT_EVALUATION_SECONDS='30')
         self.values.update(MQTT_HOST='mqtt.dbe.org', INGESTION_BACKEND='mqtt',
                            SECRETS_DIR=str(self.secrets), MQTT_CERTS_DIR=str(self.certs))
         for index, name in enumerate(env.SECRET_NAMES):
             secret = ('$2b$12$' + chr(65 + index) * 53) if name.endswith('_hash') else os.urandom(32).hex()
             (self.secrets / name).write_text(secret + '\n')
+        (self.secrets / 'alert_webhook_url').write_text('')
         self.write_config()
 
     def write_config(self):
@@ -184,6 +189,46 @@ class EnvironmentContract(unittest.TestCase):
         prepare.assert_not_called()
         smoke.assert_not_called()
 
+    def test_invalid_alert_parameters_and_schedule_fail_before_start(self):
+        rules = json.loads((env.DEPLOY / 'alerts.dev.example.json').read_text())
+        for key, invalid in [('level_critical', 1), ('rise_critical', 0.05),
+                             ('rise_period_seconds', 0), ('rise_min_seconds', 600),
+                             ('enabled', 'true'), ('version', 1)]:
+            with self.subTest(parameter=key):
+                changed = [dict(rules[0], **{key: invalid})]
+                self.rules.write_text(json.dumps(changed))
+                with self.assertRaises(env.ConfigurationError):
+                    self.validate()
+        self.rules.write_text('[]')
+        self.values['ALERT_EVALUATION_SECONDS'] = '0'
+        self.write_config()
+        with self.assertRaises(env.ConfigurationError):
+            self.validate()
+
+    def test_alert_secrets_are_distinct_and_webhook_is_optional_https(self):
+        target = self.secrets / 'alert_webhook_url'
+        target.write_text('https://receiver.dbe.org/events')
+        self.validate()
+        for invalid in ('http://receiver.dbe.org', 'https://user:pass@receiver.dbe.org'):
+            target.write_text(invalid)
+            with self.assertRaises(env.ConfigurationError):
+                self.validate()
+        target.write_text('')
+        (self.secrets / 'alert_admin_key').write_text((self.secrets / 'api_key').read_text())
+        with self.assertRaises(env.ConfigurationError):
+            self.validate()
+
+    def test_existing_alert_rule_file_is_preserved(self):
+        shutil.copyfile(env.DEPLOY / '.env.example', self.deploy / '.env.example')
+        (self.deploy / 'secrets').mkdir()
+        (self.deploy / 'certs').mkdir()
+        target = self.deploy / 'alerts.json'
+        target.write_text('[]')
+        with patch.object(env, 'DEPLOY', self.deploy), patch.object(env, 'run'), \
+                patch.object(env, 'check_secrets'), patch.object(env, 'check_certificate'):
+            env.prepare_development()
+        self.assertEqual(target.read_text(), '[]')
+
 
 class SmokeContract(unittest.TestCase):
     def exercise(self, backend, *, never_visible=False, stale_flow=False, invalid_json=False):
@@ -286,9 +331,10 @@ class RealDevelopmentContract(unittest.TestCase):
             deploy = Path(directory) / 'deploy'
             (deploy / 'scripts').mkdir(parents=True)
             (deploy / 'nodered').mkdir()
-            for name in ('setup.mjs', 'add-telegraf-secrets.mjs'):
+            for name in ('setup.mjs', 'add-telegraf-secrets.mjs', 'add-alert-secrets.mjs'):
                 shutil.copyfile(env.DEPLOY / 'scripts' / name, deploy / 'scripts' / name)
             shutil.copyfile(env.DEPLOY / '.env.example', deploy / '.env.example')
+            shutil.copyfile(env.DEPLOY / 'alerts.dev.example.json', deploy / 'alerts.dev.example.json')
             (deploy / 'nodered/node_modules').symlink_to(env.DEPLOY / 'nodered/node_modules', target_is_directory=True)
             real_run = env.run
 
@@ -304,4 +350,4 @@ class RealDevelopmentContract(unittest.TestCase):
                 env.prepare_development()
             self.assertEqual(original, {file.name: file.read_bytes() for file in (deploy / 'secrets').iterdir()})
             self.assertEqual(certificate, (deploy / 'certs/mqtt/server.crt').read_bytes())
-            self.assertEqual(len(original), len(env.SECRET_NAMES) + 1)
+            self.assertEqual(len(original), len(env.SECRET_NAMES) + 2)

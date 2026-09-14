@@ -54,6 +54,24 @@ services:
       migrate: {condition: service_completed_successfully}
     restart: 'no'
 
+  configure-alerts:
+    image: dbe-sensor-api:local
+    command: [configure-alerts]
+    environment:
+      DB_HOST: timescaledb
+      DB_NAME: sensors
+      DB_USER: postgres
+      DB_PASSWORD_FILE: /run/secrets/db_admin_password
+      DB_SSLMODE: disable
+      ALERT_EVALUATION_SECONDS: ${ALERT_EVALUATION_SECONDS:-30}
+      ALERT_RULES_FILE: /etc/danubaas/alerts.json
+    secrets: [db_admin_password]
+    volumes: ["${ALERT_RULES_FILE:-./alerts.json}:/etc/danubaas/alerts.json:ro"]
+    networks: [database]
+    depends_on:
+      grants: {condition: service_completed_successfully}
+    restart: 'no'
+
   api:
     <<: *runtime
     build: ..
@@ -67,10 +85,13 @@ services:
       DB_PASSWORD_FILE: /run/secrets/db_api_password
       DB_SSLMODE: disable
       API_KEY_FILE: /run/secrets/api_key
-    secrets: [db_api_password, api_key]
+      ALERT_ADMIN_KEY_FILE: /run/secrets/alert_admin_key
+      ALERT_WEBHOOK_URL_FILE: /run/secrets/alert_webhook_url
+    secrets: [db_api_password, api_key, alert_admin_key, alert_webhook_url]
     networks: [edge, ingestion, database]
     depends_on:
       grants: {condition: service_completed_successfully}
+      configure-alerts: {condition: service_completed_successfully}
     healthcheck:
       test: [CMD, /sensor-api, healthcheck]
       interval: 10s
@@ -234,3 +255,5 @@ secrets:
   caddy_password_hash: {file: "${SECRETS_DIR:-./secrets}/caddy_password_hash"}
   db_telegraf_password: {file: "${SECRETS_DIR:-./secrets}/db_telegraf_password"}
   mqtt_telegraf_password: {file: "${SECRETS_DIR:-./secrets}/mqtt_telegraf_password"}
+  alert_admin_key: {file: "${SECRETS_DIR:-./secrets}/alert_admin_key"}
+  alert_webhook_url: {file: "${SECRETS_DIR:-./secrets}/alert_webhook_url"}

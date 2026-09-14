@@ -17,10 +17,11 @@ mkdirSync(secrets, { mode: 0o700 })
 const password = () => randomBytes(32).toString('hex')
 const credentials = {}
 function save (name, value) { writeFileSync(resolve(secrets, name), value + '\n', { mode: 0o444, flag: 'wx' }) }
-for (const name of ['db_telegraf_password', 'mqtt_telegraf_password', 'db_admin_password', 'db_api_password', 'db_grafana_password', 'api_key', 'mqtt_node_red_password', 'mqtt_demo_password', 'node_red_credential_secret', 'grafana_admin_password']) {
+for (const name of ['alert_admin_key', 'db_telegraf_password', 'mqtt_telegraf_password', 'db_admin_password', 'db_api_password', 'db_grafana_password', 'api_key', 'mqtt_node_red_password', 'mqtt_demo_password', 'node_red_credential_secret', 'grafana_admin_password']) {
   const value = password(); save(name, value)
-  if (['api_key', 'mqtt_demo_password', 'grafana_admin_password'].includes(name)) credentials[name] = value
+  if (['api_key', 'alert_admin_key', 'mqtt_demo_password', 'grafana_admin_password'].includes(name)) credentials[name] = value
 }
+save('alert_webhook_url', '')
 for (const name of ['caddy', 'dashboard', 'node_red_admin']) {
   const value = password(); save(name + '_password_hash', bcrypt.hashSync(value, 12)); credentials[name + '_password'] = value
 }

@@ -134,6 +134,13 @@ class ProxyContract(unittest.TestCase):
             self.assertEqual(self.get(host, '/api/v1/values', {'X-API-Key': 'test-api-key'})[0], 200)
             self.assertEqual(self.get(host, '/admin', {'X-API-Key': 'test-api-key'})[0], 404)
 
+    def test_alert_routes_reach_only_the_custom_api(self):
+        for path in ('/api/v1/alert-rules', '/api/v1/alert-rules/river',
+                     '/api/v1/alerts', '/api/v1/alerts/1/events', '/api/v1/alerting-status'):
+            self.assertEqual(self.get('API_HOST', path)[0], 401)
+            self.assertEqual(self.get('API_HOST', path, {'X-API-Key': 'test-api-key'})[0], 200)
+            self.assertEqual(self.get('NODE_RED_API_HOST', path, {'X-API-Key': 'test-api-key'})[0], 404)
+
 
 if __name__ == '__main__':
     if not os.environ.get('CADDY_BIN'):

@@ -1,9 +1,10 @@
 openapi: 3.1.0
 info:
-  title: Sensor Values API
-  version: 0.1.0
+  title: DanuBaaS Sensor and Alert API
+  version: 0.2.0
   description: |
-    One immutable sensor resource. All operations require X-API-Key.
+    Immutable observations and versioned water-level alert rules. All operations require X-API-Key.
+    Alert writes require the separate alert administrator key; sensor keys permit alert reads.
     POST commits an object or an atomic batch. Identical retries retain IDs and
     receive the original records. Lists use commit-ordered cursor pagination.
 servers:
@@ -11,6 +12,156 @@ servers:
 security:
   - APIKey: []
 paths:
+  /api/v1/alert-rules:
+    get:
+      operationId: listAlertRules
+      summary: List rules ordered by ID
+      description: Use the final ID as after to retrieve the next page, stopping at an empty array.
+      parameters:
+        - {name: after, in: query, schema: {type: string}}
+        - {$ref: '#/components/parameters/AlertLimit'}
+      responses:
+        '200':
+          description: Rule page
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/AlertRule'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createAlertRule
+      summary: Create one rule per sensor; administrative key required
+      security: [{AlertAdminKey: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AlertRule'}
+      responses:
+        '201':
+          description: Created, including server-generated version and updated_at
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertRule'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {description: Alert administrator key required}
+        '409': {description: Rule ID or sensor already configured}
+        '422': {description: Invalid parameters; creation requires version zero}
+  /api/v1/alert-rules/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getAlertRule
+      summary: Read a rule
+      responses:
+        '200':
+          description: Current rule
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertRule'}
+        '404': {description: Rule not found}
+    put:
+      operationId: replaceAlertRule
+      summary: Replace parameters using the current version as an optimistic lock
+      description: ID and sensor_id are immutable. Existing alert conditions are retired and fresh observations are required. Set enabled=false to disable; historical records are preserved.
+      security: [{AlertAdminKey: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AlertRule'}
+      responses:
+        '200':
+          description: Updated rule with incremented version
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertRule'}
+        '403': {description: Alert administrator key required}
+        '409': {description: Version conflict; reload before editing}
+        '422': {description: Invalid parameters or attempted identity change}
+  /api/v1/alert-rules/{id}/versions:
+    get:
+      operationId: listAlertRuleVersions
+      summary: Read immutable configuration history
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/AlertAfter'}
+        - {$ref: '#/components/parameters/AlertLimit'}
+      responses:
+        '200':
+          description: Version history ordered by version; use final version as next after
+          content:
+            application/json:
+              schema: {type: array, items: {type: object}}
+  /api/v1/alerts:
+    get:
+      operationId: listAlerts
+      summary: List alert occurrences
+      parameters:
+        - {$ref: '#/components/parameters/AlertAfter'}
+        - {$ref: '#/components/parameters/AlertLimit'}
+        - {name: active, in: query, schema: {type: boolean, default: false}}
+      responses:
+        '200':
+          description: Ordered by ID; use final ID as after for the next page
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Alert'}}
+  /api/v1/alerts/{id}:
+    get:
+      operationId: getAlert
+      summary: Read an alert occurrence
+      parameters:
+        - {$ref: '#/components/parameters/AlertID'}
+      responses:
+        '200':
+          description: Alert occurrence
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Alert'}
+        '404': {description: Alert not found}
+  /api/v1/alerts/{id}/events:
+    get:
+      operationId: listAlertEvents
+      summary: Read alert evidence and transition history
+      parameters:
+        - {$ref: '#/components/parameters/AlertID'}
+        - {$ref: '#/components/parameters/AlertAfter'}
+        - {$ref: '#/components/parameters/AlertLimit'}
+      responses:
+        '200':
+          description: Events ordered by ID; use final ID as next after
+          content:
+            application/json:
+              schema: {type: array, items: {type: object}}
+  /api/v1/alerts/{id}/acknowledgments:
+    post:
+      operationId: acknowledgeAlert
+      summary: Idempotently acknowledge an alert without resolving its condition
+      description: Actor is the authenticated shared alert-admin principal, not an individually identified person.
+      security: [{AlertAdminKey: []}]
+      parameters:
+        - {$ref: '#/components/parameters/AlertID'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                note: {type: string, maxLength: 2000, description: Maximum 2000 UTF-8 bytes}
+      responses:
+        '200': {description: Acknowledged; first acknowledgment is preserved on retry}
+        '403': {description: Alert administrator key required}
+        '404': {description: Alert not found}
+  /api/v1/alerting-status:
+    get:
+      operationId: getAlertingStatus
+      summary: Check successful evaluator execution and notification backlog
+      responses:
+        '200': {description: Last evaluation succeeded within three configured intervals}
+        '503': {description: No recent successful evaluation}
   /api/v1/values:
     post:
       operationId: postValues
@@ -107,9 +258,63 @@ paths:
               schema: {$ref: '#/components/schemas/Error'}
         '503': {$ref: '#/components/responses/Unavailable'}
 components:
+  parameters:
+    AlertID:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer, format: int64, minimum: 1}
+    AlertAfter:
+      name: after
+      in: query
+      schema: {type: integer, format: int64, minimum: 0, default: 0}
+    AlertLimit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 1000, default: 100}
   securitySchemes:
+    AlertAdminKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Separate alert_admin_key secret; never distribute to sensor publishers
     APIKey: {type: apiKey, in: header, name: X-API-Key}
   schemas:
+    AlertRule:
+      type: object
+      additionalProperties: false
+      required: [id, sensor_id, enabled, level_warning, level_critical, rise_warning, rise_critical, rise_period_seconds, rise_window_seconds, rise_min_seconds, level_hysteresis, rise_hysteresis, hold_seconds, stale_seconds, version]
+      description: Canonical sensor_type water-level and unit m only. All thresholds must be finite; warning is below critical. Hysteresis is smaller than the corresponding threshold gap. Durations are seconds. Writes reject duplicate keys, unknown fields, trailing JSON and bodies above 16 KiB.
+      properties:
+        id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$'}
+        sensor_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$'}
+        enabled: {type: boolean}
+        level_warning: {type: number, description: Warning water level in metres}
+        level_critical: {type: number, description: Critical water level in metres}
+        rise_warning: {type: number, exclusiveMinimum: 0, description: Warning metres of rise per rise_period_seconds}
+        rise_critical: {type: number, exclusiveMinimum: 0, description: Critical metres of rise per rise_period_seconds}
+        rise_period_seconds: {type: integer, minimum: 1, maximum: 86400}
+        rise_window_seconds: {type: integer, minimum: 2, maximum: 86400}
+        rise_min_seconds: {type: integer, minimum: 1, description: Must be below rise_window_seconds}
+        level_hysteresis: {type: number, minimum: 0}
+        rise_hysteresis: {type: number, minimum: 0}
+        hold_seconds: {type: integer, minimum: 0, description: Must not exceed stale_seconds}
+        stale_seconds: {type: integer, maximum: 604800, description: Must be at least rise_min_seconds}
+        version: {type: integer, minimum: 0, description: Zero for create; current version for replacement}
+        updated_at: {type: string, format: date-time, readOnly: true}
+    Alert:
+      type: object
+      properties:
+        id: {type: integer, format: int64}
+        rule_id: {type: string}
+        rule_version: {type: integer}
+        kind: {type: string, enum: [level, rise, stale]}
+        severity: {type: string, enum: [warning, critical]}
+        opened_at: {type: string, format: date-time}
+        resolved_at: {type: [string, 'null'], format: date-time}
+        acknowledged_at: {type: [string, 'null'], format: date-time}
+        acknowledged_by: {type: [string, 'null']}
+        acknowledgment_note: {type: [string, 'null']}
     ID:
       type: string
       pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'

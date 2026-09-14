@@ -1,0 +1,19 @@
+[
+  {
+    "id": "quickstart-water-level",
+    "sensor_id": "quickstart",
+    "enabled": true,
+    "level_warning": 2.0,
+    "level_critical": 3.0,
+    "rise_warning": 0.1,
+    "rise_critical": 0.2,
+    "rise_period_seconds": 300,
+    "rise_window_seconds": 600,
+    "rise_min_seconds": 30,
+    "level_hysteresis": 0.05,
+    "rise_hysteresis": 0.02,
+    "hold_seconds": 0,
+    "stale_seconds": 900,
+    "version": 0
+  }
+]

@@ -91,3 +91,26 @@ Run `make test-e2e` against the running development stack for HTTP acceptance.
 The [end-to-end guide](end-to-end-testing.md) describes assertions, retained test
 data, CI coverage, and the distinction between local PostgreSQL verification and
 full Compose/TimescaleDB execution.
+
+## Alerting verification
+
+Migration `004` and the alert lifecycle suite were run against a disposable native
+TimescaleDB **2.27.1 on PostgreSQL 16.15**. This included real hypertables,
+Go and MQTT database writers, warning/critical transitions, hold/hysteresis,
+missing sensors, late readings, configuration version conflicts, idempotent seeds,
+acknowledgments, notification leasing and the restricted scheduler role.
+
+A separate native startup exercise ran the migration, deployment grants and
+`configure-alerts` twice, started the Go API as `sensor_api`, and verified actual
+scheduled detection over HTTP, both health routes, administrative key isolation,
+version conflicts and acknowledgment. This validates the real scheduler and
+application integration; it does not replace the pinned PostgreSQL 17 Compose
+build/startup checks. Docker daemon access was unavailable in this workspace.
+CI's existing Compose matrix runs `make dev` for both ingestion backends and now
+also requires a successful scheduled evaluation through HTTPS.
+
+Webhook transport tests use a real local TLS receiver and check successful and
+failed deliveries, stable idempotency identifiers, and redirect rejection.
+Bootstrap tests cover alert parameter validation, new credentials, preserved rule
+files, and fresh/repeated setup. Full deployment verification still requires
+`make dev` with an accessible Docker daemon.

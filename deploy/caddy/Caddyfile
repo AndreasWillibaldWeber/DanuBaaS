@@ -4,7 +4,7 @@
 
 # Machine clients use only X-API-Key. No browser Basic Auth on this host.
 {$API_HOST} {
-	@values path /api/v1/values
+	@values path /api/v1/values /api/v1/alert-rules /api/v1/alert-rules/* /api/v1/alerts /api/v1/alerts/* /api/v1/alerting-status
 	handle @values {
 		reverse_proxy api:8080
 	}

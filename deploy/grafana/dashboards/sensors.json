@@ -2,7 +2,7 @@
   "uid": "sensors",
   "title": "Sensor observations",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "10s",
   "time": {
     "from": "now-24h",
@@ -56,6 +56,62 @@
           "refId": "A",
           "format": "table",
           "rawSql": "SELECT time, sensor_id, sensor_type, value, unit, longitude, latitude, location_id, metadata FROM sensor.dashboard_values ORDER BY time DESC LIMIT 100",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Active alerts",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "sensor-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT a.id, r.sensor_id, a.kind, a.severity, a.opened_at, a.acknowledged_at, a.acknowledged_by FROM alerting.alerts a JOIN configuration.alert_rules r ON r.id=a.rule_id WHERE a.resolved_at IS NULL ORDER BY a.opened_at DESC LIMIT 100",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Alert evaluator health",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "sensor-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT last_success_at, schedule_seconds, last_success_at > now() - make_interval(secs => schedule_seconds * 3) AS evaluator_healthy FROM alerting.evaluator_status",
           "editorMode": "code"
         }
       ],

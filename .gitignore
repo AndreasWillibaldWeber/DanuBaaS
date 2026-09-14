@@ -36,3 +36,5 @@ bin/
 /sensor-api
 __pycache__/
 deploy/.env.production
+
+deploy/alerts.json
