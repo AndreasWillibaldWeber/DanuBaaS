@@ -1,0 +1,182 @@
+openapi: 3.1.0
+info:
+  title: Sensor Values API
+  version: 0.1.0
+  description: |
+    One immutable sensor resource. All operations require X-API-Key.
+    POST commits an object or an atomic batch. Identical retries retain IDs and
+    receive the original records. Lists use commit-ordered cursor pagination.
+servers:
+  - url: https://api.localhost
+security:
+  - APIKey: []
+paths:
+  /api/v1/values:
+    post:
+      operationId: postValues
+      summary: Commit one observation or an atomic batch
+      description: |
+        Body limit 1 MiB, normalized observation limit 16 KiB; no duplicate JSON keys, trailing documents, or query
+        parameters. Every ID must be unique within a batch. Reusing an ID with
+        different content rolls back the entire batch. Supply application/json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/Value'
+                - type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items: {$ref: '#/components/schemas/Value'}
+      responses:
+        '201':
+          description: At least one new observation committed; response shape matches request
+          headers:
+            Location:
+              description: Single-object requests only; resource URL with id query
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WriteResult'}
+        '200':
+          description: Every observation was an identical replay; original records returned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WriteResult'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409':
+          description: ID conflict; no values from this batch were written
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '413':
+          description: Body exceeds 1 MiB
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '415':
+          description: Unsupported media type or Content-Encoding
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422':
+          description: Invalid observation or batch
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    get:
+      operationId: getValues
+      summary: Read one observation or a page of all observations
+      description: |
+        id cannot be combined with limit or after. Unknown, empty, repeated, or
+        malformed query parameters are rejected. Follow Link until absent to
+        traverse all values. Pages reflect a live dataset, not a frozen snapshot.
+      parameters:
+        - name: id
+          in: query
+          schema: {$ref: '#/components/schemas/ID'}
+        - name: after
+          in: query
+          schema: {type: integer, format: int64, minimum: 0, default: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000, default: 100}
+      responses:
+        '200':
+          description: One object with id, otherwise an array (possibly empty)
+          headers:
+            X-Next-Cursor:
+              description: Present only when more records were available
+              schema: {type: string, pattern: '^[0-9]+$'}
+            Link:
+              description: Relative next-page URL with rel="next"
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WriteResult'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404':
+          description: The requested observation does not exist
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+components:
+  securitySchemes:
+    APIKey: {type: apiKey, in: header, name: X-API-Key}
+  schemas:
+    ID:
+      type: string
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      description: Lowercase client-generated UUID retained on retry
+    Value:
+      type: object
+      additionalProperties: false
+      required: [id, sensor_id, sensor_type, timestamp, value, unit]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        sensor_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$'}
+        gateway_id: {type: [string, 'null'], pattern: '^$|^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$'}
+        sensor_type: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$'}
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC3339 with timezone; years 1970–9999; at most microsecond precision
+        value: {type: number, format: double, description: Finite numeric observation; zero is valid}
+        unit: {type: string, minLength: 1, maxLength: 32, description: Maximum 32 UTF-8 bytes; no surrounding whitespace}
+        metadata:
+          type: [object, 'null']
+          description: Source-specific JSON fields; key length 1–128 UTF-8 bytes
+          propertyNames: {minLength: 1, maxLength: 128}
+          additionalProperties: true
+    Record:
+      type: object
+      required: [id, sensor_id, sensor_type, timestamp, value, unit, sequence, received_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        sensor_id: {type: string}
+        gateway_id: {type: string}
+        sensor_type: {type: string}
+        timestamp: {type: string, format: date-time}
+        value: {type: number}
+        unit: {type: string}
+        metadata: {type: object, additionalProperties: true}
+        sequence: {type: integer, format: int64}
+        received_at: {type: string, format: date-time}
+      additionalProperties: false
+    WriteResult:
+      oneOf:
+        - {$ref: '#/components/schemas/Record'}
+        - type: array
+          items: {$ref: '#/components/schemas/Record'}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+  responses:
+    BadRequest:
+      description: Malformed JSON, invalid field types, or invalid query
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized:
+      description: A single valid X-API-Key header is required
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unavailable:
+      description: Storage operation failed; retry with the same IDs
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
