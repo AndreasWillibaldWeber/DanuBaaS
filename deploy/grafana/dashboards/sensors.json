@@ -2,7 +2,7 @@
   "uid": "sensors",
   "title": "Sensor observations",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "10s",
   "time": {
     "from": "now-24h",
@@ -27,12 +27,14 @@
         {
           "refId": "A",
           "format": "time_series",
-          "rawSql": "SELECT time, value, sensor_id AS metric FROM sensor.dashboard_values WHERE $__timeFilter(time) AND sensor_type LIKE 'water-level%' ORDER BY time",
+          "rawSql": "SELECT time, value, CASE WHEN sensor_id = 'demo-stable' THEN 'WL-001' WHEN sensor_id = 'demo-fluctuating' THEN 'WL-002' WHEN sensor_id = 'demo-elevated' THEN 'WL-003' WHEN sensor_id = 'demo-rapid-rise' THEN 'WL-004' WHEN sensor_id = 'quickstart' THEN 'WL-000' WHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$' THEN 'WL-' || split_part(sensor_id, '-', 3) || '-' || CASE split_part(sensor_id, '-', 4) || '-' || split_part(sensor_id, '-', 5) WHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006' WHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS metric FROM sensor.dashboard_values WHERE $__timeFilter(time) AND sensor_type LIKE 'water-level%' ORDER BY time",
           "editorMode": "code"
         }
       ],
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "unit": "lengthm"
+        },
         "overrides": []
       },
       "options": {}
@@ -55,13 +57,26 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT time, sensor_id, sensor_type, value, unit, longitude, latitude, location_id, metadata FROM sensor.dashboard_values ORDER BY time DESC LIMIT 100",
+          "rawSql": "SELECT time, CASE WHEN sensor_id = 'demo-stable' THEN 'WL-001' WHEN sensor_id = 'demo-fluctuating' THEN 'WL-002' WHEN sensor_id = 'demo-elevated' THEN 'WL-003' WHEN sensor_id = 'demo-rapid-rise' THEN 'WL-004' WHEN sensor_id = 'quickstart' THEN 'WL-000' WHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$' THEN 'WL-' || split_part(sensor_id, '-', 3) || '-' || CASE split_part(sensor_id, '-', 4) || '-' || split_part(sensor_id, '-', 5) WHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006' WHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS station, sensor_id, sensor_type, value, unit, longitude, latitude, location_id, metadata FROM sensor.dashboard_values ORDER BY time DESC LIMIT 100",
           "editorMode": "code"
         }
       ],
       "fieldConfig": {
         "defaults": {},
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sensor_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
       },
       "options": {}
     },
@@ -83,13 +98,26 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT a.id, r.sensor_id, a.kind, a.severity, a.opened_at, a.acknowledged_at, a.acknowledged_by FROM alerting.alerts a JOIN configuration.alert_rules r ON r.id=a.rule_id WHERE a.resolved_at IS NULL ORDER BY a.opened_at DESC LIMIT 100",
+          "rawSql": "SELECT a.id, CASE WHEN r.sensor_id = 'demo-stable' THEN 'WL-001' WHEN r.sensor_id = 'demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id = 'demo-elevated' THEN 'WL-003' WHEN r.sensor_id = 'demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id = 'quickstart' THEN 'WL-000' WHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$' THEN 'WL-' || split_part(r.sensor_id, '-', 3) || '-' || CASE split_part(r.sensor_id, '-', 4) || '-' || split_part(r.sensor_id, '-', 5) WHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006' WHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station, location.location_id, r.sensor_id, a.kind, a.severity, a.opened_at, a.acknowledged_at, a.acknowledged_by FROM alerting.alerts a JOIN configuration.alert_rules r ON r.id=a.rule_id LEFT JOIN LATERAL (SELECT location_id FROM sensor.dashboard_values WHERE sensor_id=r.sensor_id ORDER BY time DESC LIMIT 1) location ON true WHERE a.resolved_at IS NULL ORDER BY a.opened_at DESC LIMIT 100",
           "editorMode": "code"
         }
       ],
       "fieldConfig": {
         "defaults": {},
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sensor_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
       },
       "options": {}
     },

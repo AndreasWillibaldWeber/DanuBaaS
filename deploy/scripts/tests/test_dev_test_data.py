@@ -46,7 +46,8 @@ class TestDataset(unittest.TestCase):
             self.assertTrue(all(r['metadata']['synthetic'] and math.isfinite(r['value']) and r['value'] >= 0 for r in rows))
         self.assertEqual({r['metadata']['ingestion_route'] for r in self.rows}, {'api', 'node-red'})
         self.assertTrue(any('lon_lat' in r for r in self.rows))
-        self.assertTrue(any('location_id' in r for r in self.rows))
+        self.assertEqual({r['location_id'] for r in self.rows}, {9000, 9001, 9002, 9003})
+        self.assertTrue(all(type(r['location_id']) is int for r in self.rows))
 
     def test_scenario_behaviour(self):
         profiles = {p: [r['value'] for r in self.rows if r['metadata']['profile'] == p] for p in data.PROFILES}
@@ -105,6 +106,10 @@ class TestAlertDemo(unittest.TestCase):
             report = data.load_alert_demo(Mock(), admin, 'mqtt', 120)
         self.assertEqual(len(report['rules']), 4)
         self.assertEqual(len(report['observations']), 6)
+        self.assertEqual({r['location_id'] for r in report['observations']}, {9004, 9005, 9006, 9007})
+        for r in report['observations'][-2:]:
+            baseline = next(b for b in report['observations'][:4] if b['sensor_id'] == r['sensor_id'])
+            self.assertEqual(r['location_id'], baseline['location_id'])
         self.assertEqual(load.call_count, 2)
         self.assertEqual(len(verify.call_args.args[1]), 4)
         self.assertEqual({(r['id'].split('-')[-2], r['id'].split('-')[-1]) for r in report['rules']},

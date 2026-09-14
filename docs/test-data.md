@@ -16,7 +16,7 @@ The loader only supports the default local development API hostnames.
 
 ## Historical dataset
 
-Version 1 generates **580 observations**: four sensors with 145 readings each,
+Version 2 generates **580 observations**: four sensors with 145 readings each,
 ten minutes apart over 24 hours ending at the current UTC hour.
 
 | Sensor | Behaviour | Write route |
@@ -28,7 +28,9 @@ ten minutes apart over 24 hours ending at the current UTC hour.
 
 All observations have `synthetic: true` and a dataset version in metadata. They
 use the `demo-test-data` gateway, metres, and canonical `water-level` sensor type.
-Some sensors use example GPS coordinates; others use numeric location IDs. These
+Every sensor has a numeric location ID: 9000–9003 for historical stations and
+9004–9007 for the four live alert stations. Historical stations 9000 and 9002 also
+have example GPS coordinates. These
 are illustrative locations, not claims about actual monitoring stations.
 
 Each route receives single and batch requests, with batches of at most 100.
@@ -109,7 +111,7 @@ before operational use.
 Open Grafana's **Sensor observations** dashboard with a time range covering the
 chosen anchor (normally Last 24 hours). It shows historical series, recent
 observations, active alerts and evaluator health. Filter or identify demo alerts
-by the `demo-alert-` prefix. The Node-RED dashboard shows recent committed records.
+by their `WL-<run>-005` through `WL-<run>-008` station labels. The Node-RED dashboard shows recent committed records.
 
 Any rejected write, corrupt read-back, missing observation, unexpected route
 status, missing alert, or missing alert evidence exits nonzero. Partial data and
@@ -124,3 +126,19 @@ missing observations, rule parameters, and alert-evidence checks with controlled
 peers. These unit tests do not substitute for real ingestion. The Compose CI
 matrix runs `make dev-test-data` with both Node-RED backends (`api` and `mqtt`) and
 requires successful database read-back and scheduled alerts.
+
+## Grafana station labels
+
+Grafana presents these synthetic sensors as ordinary water-level stations:
+`WL-001` through `WL-004` for the historical series, and
+`WL-<run>-005` through `WL-<run>-008` for the four live alert sensors. `quickstart`
+is displayed as `WL-000`. The run component keeps distinct test sensors distinguishable.
+Other sensor IDs are displayed unchanged. These aliases apply to chart legends
+and station columns in the observation and alert tables. Original IDs remain in
+the query results (hidden in the tables), API, and database; synthetic metadata
+and deterministic replay are preserved. Water-level chart values use metres.
+
+Dataset version 2 adds location IDs to every reading and uses a new UUID namespace
+input (`v2`), so loading it beside version 1 does not conflict with immutable
+records. Old readings remain unchanged and may lack a location ID. Alert tables
+show the location ID from the sensor’s latest reading.

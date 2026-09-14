@@ -37,7 +37,7 @@ def anchor_time(value=None, now=None):
 
 
 def dataset(anchor):
-    """Version 1: 145 points per sensor, ten-minute spacing over 24 hours."""
+    """Version 2: 145 points per sensor, ten-minute spacing over 24 hours."""
     stamp = anchor.isoformat(timespec='microseconds').replace('+00:00', 'Z')
     rows = []
     for index, profile in enumerate(PROFILES):
@@ -51,17 +51,16 @@ def dataset(anchor):
             else:
                 level = 0.9 + max(0, step - 141) * 0.4
             observation = dict(
-                id=str(uuid.uuid5(NAMESPACE, f'v1/{stamp}/{profile}/{step}')),
+                id=str(uuid.uuid5(NAMESPACE, f'v2/{stamp}/{profile}/{step}')),
                 sensor_id='demo-' + profile, gateway_id='demo-test-data',
                 sensor_type='water-level', unit='m', value=round(level, 4),
                 timestamp=(anchor - timedelta(minutes=(144 - step) * 10)).isoformat(timespec='microseconds').replace('+00:00', 'Z'),
-                metadata={'synthetic': True, 'dataset': 'dev-test-data-v1',
+                metadata={'synthetic': True, 'dataset': 'dev-test-data-v2',
                           'profile': profile, 'anchor': stamp,
                           'ingestion_route': 'api' if index % 2 == 0 else 'node-red'})
+            observation['location_id'] = 9000 + index
             if index % 2 == 0:
                 observation['lon_lat'] = [12.96 + index * 0.001, 48.83]
-            else:
-                observation['location_id'] = 9000 + index
             rows.append(observation)
     return rows
 
@@ -152,10 +151,10 @@ def load_alert_demo(client, admin, backend, timeout):
                     'demo alert rule creation failed')
             rules.append(saved)
     baseline_time = datetime.now(timezone.utc)
-    for rule in rules:
+    for index, rule in enumerate(rules):
         kind, severity = rule['id'].split('-')[-2:]
         row = dict(id=str(uuid.uuid4()), sensor_id=rule['sensor_id'], gateway_id='demo-test-data',
-                   sensor_type='water-level', unit='m',
+                   sensor_type='water-level', unit='m', location_id=9004 + index,
                    value=(2.4 if severity == 'warning' else 3.4) if kind == 'level' else 0.8,
                    timestamp=baseline_time.isoformat(timespec='microseconds').replace('+00:00', 'Z'),
                    metadata={'synthetic': True, 'dataset': 'dev-test-alerts-v1', 'test_run': run,
@@ -211,7 +210,7 @@ def main(argv=None):
         temporary = directory / 'observations.json.tmp'
         temporary.write_text(json.dumps(rows, indent=2) + '\n')
         temporary.replace(target)
-        print(f'Synthetic dataset v1: {len(rows)} observations; anchor {anchor.isoformat()}', flush=True)
+        print(f'Synthetic dataset v2: {len(rows)} observations; anchor {anchor.isoformat()}', flush=True)
         print(f'Replay with --at {anchor.isoformat()}; payload saved in {target.relative_to(ROOT)}', flush=True)
         client = Curl(key, ca)
         backend = config.get('INGESTION_BACKEND', 'api')
