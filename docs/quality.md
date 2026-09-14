@@ -70,8 +70,8 @@ temporary certificates. With Node-RED dependencies installed, the suite also run
 the real development credential generator twice in a temporary directory and
 compares every secret and certificate. The startup smoke-test contract uses a
 controlled HTTP peer; only a successful `make dev` against Docker verifies the
-complete startup. In this workspace, `make dev` currently stops at the missing
-Docker Compose plugin prerequisite, so full bootstrap startup remains unverified.
+complete startup. Local Compose startup has now been verified with the pinned
+images, Node-RED write/read smoke check, and scheduled alert evaluation.
 
 ## Optional location verification
 
@@ -105,8 +105,9 @@ A separate native startup exercise ran the migration, deployment grants and
 scheduled detection over HTTP, both health routes, administrative key isolation,
 version conflicts and acknowledgment. This validates the real scheduler and
 application integration; it does not replace the pinned PostgreSQL 17 Compose
-build/startup checks. Docker daemon access was unavailable in this workspace.
-CI's existing Compose matrix runs `make dev` for both ingestion backends and now
+build/startup checks. Docker daemon access was unavailable during that native
+exercise; subsequent local Compose startup verified the pinned deployment.
+CI's Compose matrix runs `make dev-test-data` for both ingestion backends and
 also requires a successful scheduled evaluation through HTTPS.
 
 Webhook transport tests use a real local TLS receiver and check successful and
@@ -129,3 +130,18 @@ This is not evidence of a completed Debian server rollout. SSH effective policy,
 fail2ban integration, update behavior, timed systemd recovery, actual Docker
 networking and reboot persistence still require the disposable-VM acceptance
 steps in [the host-security guide](../security/debian/README.md).
+
+## Development dataset verification
+
+`make dev-test-data` adds historical series and isolated live warning/critical
+level and rise-rate scenarios through both HTTP writers. It checks all readings
+through both read endpoints, then verifies scheduled alerts and their observation
+evidence. [The dataset guide](test-data.md) describes reproducibility, retained
+data, parameters, and unit versus Compose coverage. The CI Compose matrix runs
+this target with both ingestion backends.
+
+Local acceptance passed with both Node-RED backends: 580 historical observations
+were verified through both read routes, and each run produced four expected
+level/rise alerts with matching event evidence. Replaying the same anchor via
+MQTT preserved the historical observation count, IDs, and sequences. The original
+backend configuration was restored after the check.

@@ -60,7 +60,7 @@ jobs:
           template = Path('deploy/.env.example').read_text()
           Path('deploy/.env').write_text(template.replace('INGESTION_BACKEND=api', 'INGESTION_BACKEND=' + os.environ['E2E_BACKEND']))
           PY
-      - run: make dev
+      - run: make dev-test-data
       - name: Verify writes and reads with curl
         env:
           E2E_BACKEND: ${{ matrix.backend }}
