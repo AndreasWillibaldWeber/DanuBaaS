@@ -36,3 +36,37 @@ jobs:
       - run: go test -race -count=1 -tags=integration ./internal/postgres
         env:
           TEST_DATABASE_URL: postgres://postgres:disposable-ci-password@localhost:5432/sensor_test?sslmode=disable
+  end-to-end:
+    name: Compose E2E (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [api, mqtt]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.14.0'
+      - name: Select write route in a fresh development environment
+        env:
+          E2E_BACKEND: ${{ matrix.backend }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          template = Path('deploy/.env.example').read_text()
+          Path('deploy/.env').write_text(template.replace('INGESTION_BACKEND=api', 'INGESTION_BACKEND=' + os.environ['E2E_BACKEND']))
+          PY
+      - run: make dev
+      - name: Verify writes and reads with curl
+        env:
+          E2E_BACKEND: ${{ matrix.backend }}
+        run: make test-e2e E2E_ARGS="--node-red-backend $E2E_BACKEND"
+      - name: Show service status on failure
+        if: failure()
+        run: docker compose --env-file deploy/.env -f deploy/compose.yaml ps --all
+      - name: Remove the disposable CI stack
+        if: always()
+        run: docker compose --env-file deploy/.env -f deploy/compose.yaml down --volumes --remove-orphans

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := test
-.PHONY: test integration vet build fmt dev prod prod-check test-deploy
+.PHONY: test integration vet build fmt dev prod prod-check test-deploy test-e2e
 
 # These commands never delete volumes or rotate existing credentials.
 dev:
@@ -10,6 +10,10 @@ prod:
 
 prod-check:
 	python3 deploy/scripts/environment.py prod-check
+
+# Requires running services; E2E_ARGS can override endpoints, credentials, and CA.
+test-e2e:
+	python3 deploy/scripts/e2e.py $(E2E_ARGS)
 
 test-deploy:
 	python3 -m unittest discover -s deploy/scripts/tests -v

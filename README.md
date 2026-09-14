@@ -147,6 +147,10 @@ by a cursor. This is a deliberate correctness/throughput tradeoff for a small de
 
 The machine-readable contract is [docs/openapi.yaml](docs/openapi.yaml).
 
+Verify the running stack with `make test-e2e`: curl writes through the Go API and
+Node-RED, then checks stored observations through both single and paginated reads.
+See [end-to-end testing](docs/end-to-end-testing.md) for prerequisites and both routes.
+
 ## Persistence and migrations
 
 `internal/postgres/migrations/001_initial.sql` creates:

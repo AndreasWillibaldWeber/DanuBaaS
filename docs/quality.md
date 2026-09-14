@@ -12,6 +12,7 @@ Authentication must be checked before any storage access.
 | Atomic persistence | Real database conflict after a new item rolls everything back |
 | Retry safety | Same ID/content returns original sequence and reception time |
 | Race conditions | Race detector and concurrent retries against fake and real stores |
+| HTTP end-to-end | Real curl single/batch writes through Go and Node-RED, eventual GET visibility, cross-endpoint content equality, retry identity, and paginated lists; CI Compose matrix for both backends |
 | Optional locations | HTTP and Node-RED: missing/null independently, both fields, zero, bounds, wrong types, pair length/order, and invalid final item |
 | Location persistence | Go and MQTT: typed columns, GET/list, reporting view, mixed batches without field leakage, cross-route retries, location conflicts, and database constraints |
 | Location transport | Real Node-RED and Telegraf preserve coordinates and IDs; explicit nulls become absent canonical fields and SQL NULL |
@@ -85,3 +86,8 @@ Local database checks used PostgreSQL 16 without the TimescaleDB extension. They
 verify SQL behavior and transport, but do not establish hypertable migration or
 full container-stack compatibility. CI's TimescaleDB suite and the deployment
 acceptance checks above remain required before release.
+
+Run `make test-e2e` against the running development stack for HTTP acceptance.
+The [end-to-end guide](end-to-end-testing.md) describes assertions, retained test
+data, CI coverage, and the distinction between local PostgreSQL verification and
+full Compose/TimescaleDB execution.

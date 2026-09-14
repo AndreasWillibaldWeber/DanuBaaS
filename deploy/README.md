@@ -51,6 +51,11 @@ endpoint. `INGESTION_BACKEND=mqtt` also verifies eventual read visibility after
 broker acceptance. Failure exits nonzero and leaves diagnostic containers and
 volumes intact. A failed smoke check does not mean a submitted value was lost.
 
+After startup, run `make test-e2e` to verify single/batch writes and reads through
+both HTTPS endpoints using curl, including optional locations and pagination.
+See the [end-to-end test guide](../docs/end-to-end-testing.md) for both backend modes,
+configuration, and failure diagnostics. Each run leaves 12 synthetic observations.
+
 The following individual steps are provided for troubleshooting and manual setup.
 
 Requirements: Docker Engine with access to its daemon, **Docker Compose v2.20+**,
