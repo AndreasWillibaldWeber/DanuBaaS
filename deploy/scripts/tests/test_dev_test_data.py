@@ -60,11 +60,15 @@ class TestDataset(unittest.TestCase):
 
     def test_scenario_behaviour(self):
         profiles = {p: [r['value'] for r in self.rows if r['metadata']['profile'] == p] for p in data.PROFILES}
-        self.assertLess(max(profiles['stable']) - min(profiles['stable']), .06)
-        self.assertGreater(max(profiles['fluctuating']) - min(profiles['fluctuating']), .7)
-        self.assertLess(profiles['elevated'][0], 3)
-        self.assertGreater(profiles['elevated'][-1], 3)
-        self.assertAlmostEqual(profiles['rapid-rise'][-1] - profiles['rapid-rise'][-4], 1.2)
+        self.assertEqual(profiles['level-warning'][0], 1.4)
+        self.assertEqual(profiles['level-warning'][-1], 2.4)
+        self.assertEqual(profiles['level-critical'][0], 2.1)
+        self.assertEqual(profiles['level-critical'][-1], 3.4)
+        for profile in ('rise-warning', 'rise-critical'):
+            self.assertEqual(profiles[profile][-1], .8)
+            self.assertLess(max(profiles[profile]), 2)
+        for values in profiles.values():
+            self.assertLess(max(abs(b-a) for a,b in zip(values,values[1:])), .02)
 
     def test_anchor_validation_and_timezone_equivalence(self):
         self.assertEqual(data.anchor_time(now=self.anchor + timedelta(minutes=42)), self.anchor)
@@ -113,6 +117,14 @@ class TestAlertDemo(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()):
             clock.now.side_effect = [start, start + timedelta(seconds=5)]
             report = data.load_alert_demo(Mock(), admin, 'mqtt', 120)
+        history = data.dataset(start - timedelta(hours=1))
+        for live in report['observations'][:4]:
+            previous = next(r for r in reversed(history) if r['sensor_id'] == live['sensor_id'])
+            for field in ('value', 'unit', 'sensor_type', 'gateway_id', 'location_id', 'lon_lat'):
+                self.assertEqual(live.get(field), previous.get(field), (live['sensor_id'], field))
+            for field in ('profile', 'ingestion_route'):
+                self.assertEqual(live['metadata'][field], previous['metadata'][field])
+            self.assertGreater(live['timestamp'], previous['timestamp'])
         self.assertEqual(len(report['rules']), 4)
         self.assertEqual(len(report['observations']), 6)
         self.assertEqual({r['location_id'] for r in report['observations']}, {9000, 9001, 9002, 9003})
@@ -145,6 +157,14 @@ class TestAlertDemo(unittest.TestCase):
         for alerts in ([], [{**alert, 'severity': 'warning'}]):
             with patch.object(data, 'active_alerts', return_value=alerts), self.assertRaises(data.CheckFailed):
                 data.verify_alerts(client, expected, 0)
+
+    def test_alert_verification_rejects_unintended_extra_conditions(self):
+        from unittest.mock import Mock
+        expected = {('demo-rule', 'rise', 'warning'): 'reading'}
+        alerts = [dict(id=1, rule_id='demo-rule', kind='rise', severity='warning'),
+                  dict(id=2, rule_id='demo-rule', kind='level', severity='critical')]
+        with patch.object(data, 'active_alerts', return_value=alerts), self.assertRaises(data.CheckFailed):
+            data.verify_alerts(Mock(), expected, 0)
 
     def test_near_hour_history_leaves_live_baseline_window_before_rule_creation(self):
         from unittest.mock import Mock

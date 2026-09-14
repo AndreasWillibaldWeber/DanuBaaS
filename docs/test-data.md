@@ -16,21 +16,21 @@ The loader only supports the default local development API hostnames.
 
 ## Historical dataset
 
-Version 3 generates **580 observations**: four sensors with 145 readings each,
+Version 4 generates **580 observations**: four sensors with 145 readings each,
 ten minutes apart over 24 hours ending at the current UTC hour.
 
 | Sensor | Behaviour | Write route |
 | --- | --- | --- |
-| `WL-002` | Approximately 1.2 m with small fluctuations | Direct API |
-| `WL-003` | Approximately 1.25–2.05 m | Node-RED |
-| `WL-004` | Gradual rise from 2.1 to 3.35 m | Direct API |
-| `WL-005` | 0.9 m, then a 1.2 m rise in the last 30 minutes | Node-RED |
+| `WL-002` | Gradual rise from 1.4 to 2.4 m; continues into level warning | Direct API |
+| `WL-003` | Gradual rise from 2.1 to 3.4 m; continues into level critical | Node-RED |
+| `WL-004` | Small fluctuations from 0.7 to 0.8 m; continues into rise warning | Direct API |
+| `WL-005` | Small fluctuations from 0.6 to 0.8 m; continues into rise critical | Node-RED |
 
 All observations have `synthetic: true` and a dataset version in metadata. They
 use the `demo-test-data` gateway, metres, and canonical `water-level` sensor type.
 Every sensor has a numeric location ID: 9000–9003 for historical stations and
 the same 9000–9003 for their live alert readings. Quickstart uses location 9004. Historical stations 9000 and 9002 also
-have example GPS coordinates. These
+have the same example GPS coordinates on historical and live readings. These
 are illustrative locations, not claims about actual monitoring stations.
 
 Each route receives single and batch requests, with batches of at most 100.
@@ -92,14 +92,19 @@ Common demonstration parameters are:
 | Hold / stale duration | 0 / 3600 seconds |
 
 Fresh level readings of 2.4 and 3.4 m create warning and critical conditions.
-Two other sensors start at 0.8 m. After at least two seconds, their next values
+Each historical series ends at exactly its first live value, with matching location,
+GPS coordinates (where present), unit and ingestion route. The history ends at the
+chosen anchor; the later live sample represents the same level after that gap.
+No intermediate observations are fabricated.
+The two rise scenarios continue from their historical endpoints of 0.8 m. After at least two seconds, their next values
 are calculated from actual elapsed time to produce rates of 0.15 and 0.3 m per
 minute. Warning and critical samples use different write routes. This short
 baseline is deliberate for a fast functional demonstration; it is not a
 recommended field configuration.
 
 The loader waits for the **scheduled PostgreSQL evaluator** and requires all four
-active conditions with the expected severities. It also checks each alert's event
+active conditions with the expected severities, and rejects additional active
+conditions on those four fixture rules. It also checks each alert's event
 history for the submitted observation ID. The default alert wait is 120 seconds;
 for a slower configured scheduler, increase it, for example:
 
@@ -150,3 +155,7 @@ current/limit cards, sensor selection, freshness and normalized rise rates.
 
 `make test-data-reset` verifies fixture cleanup and protection of unrelated data
 in rolled-back PostgreSQL transactions. CI runs it for both ingestion backends.
+
+Version 4 replaces the mismatched version 3 histories, which previously jumped
+to unrelated levels when live alert samples began. Regression tests compare the
+last historical and first live samples and preserve station attributes.

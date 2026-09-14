@@ -16,7 +16,7 @@ DO $$ BEGIN
  WHERE NOT coalesce(e.payload->>'gateway_id'='demo-test-data'
    AND e.payload->'metadata'->>'synthetic'='true'
    AND e.payload->'metadata'->>'dataset' IN
-    ('dev-test-data-v1','dev-test-data-v2','dev-test-data-v3','dev-test-alerts-v1'),false))
+    ('dev-test-data-v1','dev-test-data-v2','dev-test-data-v3','dev-test-data-v4','dev-test-alerts-v1','dev-test-alerts-v2'),false))
  OR EXISTS (SELECT FROM configuration.alert_rules r JOIN fixture_sensors s USING(sensor_id)
  WHERE NOT (r.id=r.sensor_id AND r.id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$')
  AND NOT (r.id='dev-test-level-warning' AND r.sensor_id='WL-002')

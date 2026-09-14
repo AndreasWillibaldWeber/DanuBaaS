@@ -16,7 +16,7 @@ from environment import read_env, ConfigurationError
 
 ROOT = Path(__file__).resolve().parents[2]
 NAMESPACE = uuid.UUID('e53bf019-43e7-4a70-a539-e6529fb0699c')
-PROFILES = ('stable', 'fluctuating', 'elevated', 'rapid-rise')
+PROFILES = ('level-warning', 'level-critical', 'rise-warning', 'rise-critical')
 SENSORS = dict(zip(PROFILES, ('WL-002', 'WL-003', 'WL-004', 'WL-005')))
 SCENARIOS = {('level', 'warning'): 'WL-002', ('level', 'critical'): 'WL-003',
              ('rise', 'warning'): 'WL-004', ('rise', 'critical'): 'WL-005'}
@@ -39,31 +39,42 @@ def anchor_time(value=None, now=None):
         raise CheckFailed('--at must be an ISO 8601 timestamp with a timezone') from None
 
 
+def historical_level(profile, step):
+    """Smooth histories ending at the baseline of each live alert scenario."""
+    progress = step / 144
+    if profile == 'level-warning':
+        return round(1.4 + progress, 4)
+    if profile == 'level-critical':
+        return round(2.1 + 1.3 * progress, 4)
+    start = 0.7 if profile == 'rise-warning' else 0.6
+    return round(start + (0.8 - start) * progress
+                 + 0.01 * math.sin(step / 6) * (1 - progress), 4)
+
+
+def station_attributes(profile):
+    index = PROFILES.index(profile)
+    attributes = {'location_id': 9000 + index}
+    if index % 2 == 0:
+        attributes['lon_lat'] = [12.96 + index * 0.001, 48.83]
+    return attributes
+
+
 def dataset(anchor):
-    """Version 3: 145 points per sensor, ten-minute spacing over 24 hours."""
+    """Version 4: 145 points per sensor, ten-minute spacing over 24 hours."""
     stamp = anchor.isoformat(timespec='microseconds').replace('+00:00', 'Z')
     rows = []
     for index, profile in enumerate(PROFILES):
         for step in range(145):
-            if profile == 'stable':
-                level = 1.2 + 0.025 * math.sin(step / 6)
-            elif profile == 'fluctuating':
-                level = 1.65 + 0.4 * math.sin(step / 12)
-            elif profile == 'elevated':
-                level = 2.1 + 1.25 * step / 144
-            else:
-                level = 0.9 + max(0, step - 141) * 0.4
+            level = historical_level(profile, step)
             observation = dict(
-                id=str(uuid.uuid5(NAMESPACE, f'v3/{stamp}/{profile}/{step}')),
+                id=str(uuid.uuid5(NAMESPACE, f'v4/{stamp}/{profile}/{step}')),
                 sensor_id=SENSORS[profile], gateway_id='demo-test-data',
                 sensor_type='water-level', unit='m', value=round(level, 4),
                 timestamp=(anchor - timedelta(minutes=(144 - step) * 10)).isoformat(timespec='microseconds').replace('+00:00', 'Z'),
-                metadata={'synthetic': True, 'dataset': 'dev-test-data-v3',
+                metadata={'synthetic': True, 'dataset': 'dev-test-data-v4',
                           'profile': profile, 'anchor': stamp,
                           'ingestion_route': 'api' if index % 2 == 0 else 'node-red'})
-            observation['location_id'] = 9000 + index
-            if index % 2 == 0:
-                observation['lon_lat'] = [12.96 + index * 0.001, 48.83]
+            observation.update(station_attributes(profile))
             rows.append(observation)
     return rows
 
@@ -128,6 +139,9 @@ def verify_alerts(client, expected, timeout):
     while True:
         found = {(a.get('rule_id'), a.get('kind'), a.get('severity')): a for a in active_alerts(client)}
         if all(key in found for key in expected):
+            rule_ids = {key[0] for key in expected}
+            require({key for key in found if key[0] in rule_ids} == set(expected),
+                    'unexpected additional alert condition on a test sensor')
             for key, observation_id in expected.items():
                 alert = found[key]
                 status, events = client.request(API, resource=f'/api/v1/alerts/{alert["id"]}/events', query={'limit': 1000})
@@ -163,13 +177,14 @@ def load_alert_demo(client, admin, backend, timeout, history_end=None):
                     'demo alert rule creation failed')
             rules.append(saved)
     baseline_time = datetime.now(timezone.utc)
-    for index, rule in enumerate(rules):
+    for rule in rules:
         kind, severity = rule['id'].split('-')[-2:]
         row = dict(id=str(uuid.uuid4()), sensor_id=rule['sensor_id'], gateway_id='demo-test-data',
-                   sensor_type='water-level', unit='m', location_id=9000 + index,
-                   value=(2.4 if severity == 'warning' else 3.4) if kind == 'level' else 0.8,
+                   sensor_type='water-level', unit='m', **station_attributes(f'{kind}-{severity}'),
+                   value=historical_level(f'{kind}-{severity}', 144),
                    timestamp=baseline_time.isoformat(timespec='microseconds').replace('+00:00', 'Z'),
-                   metadata={'synthetic': True, 'dataset': 'dev-test-alerts-v1', 'test_run': run,
+                   metadata={'synthetic': True, 'dataset': 'dev-test-alerts-v2', 'test_run': run,
+                             'profile': f'{kind}-{severity}',
                              'ingestion_route': 'api' if severity == 'warning' else 'node-red'})
         first.append(row)
         if kind == 'level':
@@ -185,7 +200,7 @@ def load_alert_demo(client, admin, backend, timeout, history_end=None):
             continue
         severity = 'warning' if row['sensor_id'] == SCENARIOS['rise', 'warning'] else 'critical'
         rate = 0.15 if severity == 'warning' else 0.3
-        updated = {**row, 'id': str(uuid.uuid4()), 'value': round(0.8 + rate * elapsed / 60, 8),
+        updated = {**row, 'id': str(uuid.uuid4()), 'value': round(row['value'] + rate * elapsed / 60, 8),
                    'timestamp': final_time.isoformat(timespec='microseconds').replace('+00:00', 'Z')}
         final.append(updated)
         expected[(f'dev-test-rise-{severity}', 'rise', severity)] = updated['id']
@@ -234,7 +249,7 @@ def main(argv=None):
         temporary = directory / 'observations.json.tmp'
         temporary.write_text(json.dumps(rows, indent=2) + '\n')
         temporary.replace(target)
-        print(f'Synthetic dataset v3: {len(rows)} observations; anchor {anchor.isoformat()}', flush=True)
+        print(f'Synthetic dataset v4: {len(rows)} observations; anchor {anchor.isoformat()}', flush=True)
         print(f'Replay with --at {anchor.isoformat()}; payload saved in {target.relative_to(ROOT)}', flush=True)
         client = Curl(key, ca)
         backend = config.get('INGESTION_BACKEND', 'api')
