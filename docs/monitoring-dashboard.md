@@ -63,7 +63,7 @@ After editing it, regenerate the checked-in provisioning file:
 ```sh
 python3 deploy/grafana/build_dashboard.py
 make test-deploy
-make test-grafana
+make test-grafana test-data-reset
 ```
 
 `make test-grafana` requires the running development database. It verifies paired

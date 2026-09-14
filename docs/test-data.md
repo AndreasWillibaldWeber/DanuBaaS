@@ -16,20 +16,20 @@ The loader only supports the default local development API hostnames.
 
 ## Historical dataset
 
-Version 2 generates **580 observations**: four sensors with 145 readings each,
+Version 3 generates **580 observations**: four sensors with 145 readings each,
 ten minutes apart over 24 hours ending at the current UTC hour.
 
 | Sensor | Behaviour | Write route |
 | --- | --- | --- |
-| `demo-stable` | Approximately 1.2 m with small fluctuations | Direct API |
-| `demo-fluctuating` | Approximately 1.25–2.05 m | Node-RED |
-| `demo-elevated` | Gradual rise from 2.1 to 3.35 m | Direct API |
-| `demo-rapid-rise` | 0.9 m, then a 1.2 m rise in the last 30 minutes | Node-RED |
+| `WL-002` | Approximately 1.2 m with small fluctuations | Direct API |
+| `WL-003` | Approximately 1.25–2.05 m | Node-RED |
+| `WL-004` | Gradual rise from 2.1 to 3.35 m | Direct API |
+| `WL-005` | 0.9 m, then a 1.2 m rise in the last 30 minutes | Node-RED |
 
 All observations have `synthetic: true` and a dataset version in metadata. They
 use the `demo-test-data` gateway, metres, and canonical `water-level` sensor type.
 Every sensor has a numeric location ID: 9000–9003 for historical stations and
-9004–9007 for the four live alert stations. Historical stations 9000 and 9002 also
+the same 9000–9003 for their live alert readings. Quickstart uses location 9004. Historical stations 9000 and 9002 also
 have example GPS coordinates. These
 are illustrative locations, not claims about actual monitoring stations.
 
@@ -40,11 +40,22 @@ the loader waits for actual database visibility before reporting success.
 
 The generated payload is saved to the Git-ignored
 `deploy/test-data/observations.json`. UUIDs are deterministic for the dataset
-version and end timestamp. Rerunning within the same UTC hour replays the same
-historical readings without duplicating them. A new end timestamp adds another
-580 readings. Overlapping runs remain distinct datasets, so charts may contain
-multiple readings at the same time; use a fresh disposable environment if this
-is unsuitable for your experiment. Nothing is automatically deleted.
+version and end timestamp. Each invocation replaces the loader-owned fixtures,
+so repeated runs keep four test sensors, plus the setup's `quickstart` sensor
+(displayed as `WL-001`): **five stations total** in a standard development stack.
+Additional operator sensors remain visible.
+
+Before loading, `reset_test_data.sql` removes observations, rules, rule versions,
+alert history and notification outbox entries belonging to these reserved test
+fixtures. It also removes legacy `demo-*` test datasets and per-run alert sensors.
+The reset is transactional, serialized with the evaluator, and refuses to proceed
+if reserved sensor IDs contain non-fixture observations or unrelated rules.
+It checks the gateway, synthetic marker and recognized dataset version. Quickstart
+and unrelated operator data are retained. Do not use `WL-002`–`WL-005` or
+`dev-test-{level,rise}-{warning,critical}` for operator-managed data or rules.
+This development-only cleanup uses Docker/psql; all new observations and rule
+parameters still enter through the HTTP endpoints. Export test history first if
+you need to retain it across runs.
 
 For an exact replay, use the end timestamp printed by the loader:
 
@@ -61,11 +72,14 @@ python3 deploy/scripts/dev_test_data.py --at 2026-09-14T12:00:00Z
 
 ## Real alert scenarios
 
-After the history is verified, every invocation creates **four new rules and six
-fresh observations**, using unique `demo-alert-<run>-...` sensor/rule IDs. The
-separate alert administrative key is used only for rule creation. Existing rules,
-including `quickstart` and operator edits, are never replaced. Each run is isolated
-from previous rise-rate baselines.
+After the history is verified, each invocation creates four fixture rules and six
+fresh observations on the **same four historical sensors**. The alert admin API
+configures level warning on `WL-002`, level critical on `WL-003`, rise warning on
+`WL-004`, and rise critical on `WL-005`. Rule IDs are stable; the run identifier
+is retained only in observation metadata and the exported report filename.
+The reset prevents previous live readings from becoming a new run's rise baseline.
+If the history ends less than 61 seconds ago, the loader waits for it to leave
+the live rise window before submitting the alert scenarios.
 
 Common demonstration parameters are:
 
@@ -98,25 +112,21 @@ Successful runs save rules, six live readings, and verified alerts to
 past alert events: the live evaluator intentionally skips old readings. The
 separate fresh scenarios establish alert behaviour without changing that policy.
 
-The rules, observations, alert history and notification outbox entries remain in
-the database. Every invocation adds another four demo rules and six live readings,
-even when historical data is replayed. Without further readings, enabled rules
-can later produce stale-data alerts. If a development webhook is configured,
-these genuine alert events can be delivered to it. Do not point development
-notifications at operational recipients. Demo thresholds require site calibration
-before operational use.
+The fixtures remain available until the next load. Without new readings, enabled
+rules can later produce stale-data alerts. Configured development webhooks can
+receive these actual alert events; use development recipients.
 
 ## Viewing and failures
 
-Open Grafana's **Sensor observations** dashboard with a time range covering the
+Open Grafana's **Water-level monitoring** dashboard with a time range covering the
 chosen anchor (normally Last 24 hours). It shows historical series, recent
 observations, active alerts and evaluator health. Filter or identify demo alerts
-by their `WL-<run>-005` through `WL-<run>-008` station labels. The Node-RED dashboard shows recent committed records.
+by their `WL-002` through `WL-005` station IDs. The Node-RED dashboard shows recent committed records.
 
 Any rejected write, corrupt read-back, missing observation, unexpected route
 status, missing alert, or missing alert evidence exits nonzero. Partial data and
 rules are retained for diagnosis. Replaying the same historical anchor is safe;
-the live alert portion always creates a new isolated run. Concurrent invocations
+the next invocation replaces the fixture set before loading. Concurrent invocations
 against the same working directory are not supported because they share the
 export file.
 
@@ -129,16 +139,14 @@ requires successful database read-back and scheduled alerts.
 
 ## Grafana station labels
 
-Grafana presents these synthetic sensors as ordinary water-level stations:
-`WL-001` through `WL-004` for the historical series, and
-`WL-<run>-005` through `WL-<run>-008` for the four live alert sensors. `quickstart`
-is displayed as `WL-000`. The run component keeps distinct test sensors distinguishable.
-Other sensor IDs are displayed unchanged. These aliases apply to chart legends
-and station columns in the observation and alert tables. Original IDs remain in
-the query results (hidden in the tables), API, and database; synthetic metadata
-and deterministic replay are preserved. Water-level chart values use metres.
+Grafana uses `WL-001` for the setup's `quickstart` sensor and the actual IDs
+`WL-002`–`WL-005` for test observations and alerts. Historical and live data now
+share identities and location IDs. The former `WL-<run>-007` style represented
+separate test runs, not different station types. Legacy fixtures are removed by
+the next loader run. Other sensor IDs are displayed unchanged.
 
-Dataset version 2 adds location IDs to every reading and uses a new UUID namespace
-input (`v2`), so loading it beside version 1 does not conflict with immutable
-records. Old readings remain unchanged and may lack a location ID. Alert tables
-show the location ID from the sensor’s latest reading.
+The [monitoring dashboard guide](monitoring-dashboard.md) explains the four
+current/limit cards, sensor selection, freshness and normalized rise rates.
+
+`make test-data-reset` verifies fixture cleanup and protection of unrelated data
+in rolled-back PostgreSQL transactions. CI runs it for both ingestion backends.

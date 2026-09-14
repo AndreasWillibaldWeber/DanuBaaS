@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := test
-.PHONY: test integration vet build fmt dev dev-test-data prod prod-check test-deploy test-e2e test-security test-grafana
+.PHONY: test integration vet build fmt dev dev-test-data prod prod-check test-deploy test-e2e test-security test-grafana test-data-reset
 
 # These commands never delete volumes or rotate existing credentials.
 dev:
@@ -48,3 +48,6 @@ test-security:
 test-grafana:
 	python3 deploy/grafana/build_dashboard.py --check
 	python3 deploy/grafana/verify_dashboard.py
+
+test-data-reset:
+	python3 deploy/scripts/verify_test_data_reset.py

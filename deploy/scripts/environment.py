@@ -314,7 +314,7 @@ def smoke_development(backend='api'):
     api_key = read_secret(DEPLOY / 'secrets', 'api_key')
     observation = dict(id=str(uuid.uuid4()), sensor_id='quickstart', gateway_id='demo',
                        sensor_type='water-level', timestamp=datetime.now(timezone.utc).isoformat(timespec='microseconds').replace('+00:00', 'Z'),
-                       value=1.42, unit='m', metadata={'source': 'make dev'})
+                       value=1.42, unit='m', location_id=9004, metadata={'source': 'make dev'})
     body = json.dumps(observation).encode()
     def request(method, resource, data=None):
         connection = LocalHTTPSConnection('flows.localhost', 443, context=context, timeout=3)

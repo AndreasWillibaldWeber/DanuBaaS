@@ -17,6 +17,9 @@ from environment import read_env, ConfigurationError
 ROOT = Path(__file__).resolve().parents[2]
 NAMESPACE = uuid.UUID('e53bf019-43e7-4a70-a539-e6529fb0699c')
 PROFILES = ('stable', 'fluctuating', 'elevated', 'rapid-rise')
+SENSORS = dict(zip(PROFILES, ('WL-002', 'WL-003', 'WL-004', 'WL-005')))
+SCENARIOS = {('level', 'warning'): 'WL-002', ('level', 'critical'): 'WL-003',
+             ('rise', 'warning'): 'WL-004', ('rise', 'critical'): 'WL-005'}
 API = 'https://api.localhost'
 NODE_RED = 'https://flows.localhost'
 
@@ -37,7 +40,7 @@ def anchor_time(value=None, now=None):
 
 
 def dataset(anchor):
-    """Version 2: 145 points per sensor, ten-minute spacing over 24 hours."""
+    """Version 3: 145 points per sensor, ten-minute spacing over 24 hours."""
     stamp = anchor.isoformat(timespec='microseconds').replace('+00:00', 'Z')
     rows = []
     for index, profile in enumerate(PROFILES):
@@ -51,11 +54,11 @@ def dataset(anchor):
             else:
                 level = 0.9 + max(0, step - 141) * 0.4
             observation = dict(
-                id=str(uuid.uuid5(NAMESPACE, f'v2/{stamp}/{profile}/{step}')),
-                sensor_id='demo-' + profile, gateway_id='demo-test-data',
+                id=str(uuid.uuid5(NAMESPACE, f'v3/{stamp}/{profile}/{step}')),
+                sensor_id=SENSORS[profile], gateway_id='demo-test-data',
                 sensor_type='water-level', unit='m', value=round(level, 4),
                 timestamp=(anchor - timedelta(minutes=(144 - step) * 10)).isoformat(timespec='microseconds').replace('+00:00', 'Z'),
-                metadata={'synthetic': True, 'dataset': 'dev-test-data-v2',
+                metadata={'synthetic': True, 'dataset': 'dev-test-data-v3',
                           'profile': profile, 'anchor': stamp,
                           'ingestion_route': 'api' if index % 2 == 0 else 'node-red'})
             observation['location_id'] = 9000 + index
@@ -97,8 +100,8 @@ def load(client, rows, backend, timeout=30):
 
 
 def alert_rule(run, kind, severity):
-    identity = f'demo-alert-{run}-{kind}-{severity}'
-    return dict(id=identity, sensor_id=identity, enabled=True,
+    identity = f'dev-test-{kind}-{severity}'
+    return dict(id=identity, sensor_id=SCENARIOS[kind, severity], enabled=True,
                 level_warning=2, level_critical=3, rise_warning=0.1, rise_critical=0.2,
                 rise_period_seconds=60, rise_window_seconds=60, rise_min_seconds=1,
                 level_hysteresis=0.05, rise_hysteresis=0.02,
@@ -137,10 +140,19 @@ def verify_alerts(client, expected, timeout):
         time.sleep(1)
 
 
-def load_alert_demo(client, admin, backend, timeout):
-    # A unique sensor/rule set avoids changing operator rules or using old rise baselines.
+def load_alert_demo(client, admin, backend, timeout, history_end=None):
+    # Historical data shares these sensors. Keep it outside the 60-second live
+    # baseline window, including loads during the first minute of an hour.
+    if history_end is not None:
+        remaining = (history_end + timedelta(seconds=61) - datetime.now(timezone.utc)).total_seconds()
+        if remaining > 0:
+            print(f'Waiting {remaining:.0f}s for historical readings to leave the live rise window.', flush=True)
+            while remaining > 0:
+                time.sleep(min(remaining, 30))
+                remaining = (history_end + timedelta(seconds=61) - datetime.now(timezone.utc)).total_seconds()
+    # Reserved fixture rules are recreated after resetting only loader-owned data.
     run = uuid.uuid4().hex[:12]
-    print(f'Creating isolated alert demo run {run}.', flush=True)
+    print(f'Creating five-station demo run {run}.', flush=True)
     rules, first, expected = [], [], {}
     for kind in ('level', 'rise'):
         for severity in ('warning', 'critical'):
@@ -154,7 +166,7 @@ def load_alert_demo(client, admin, backend, timeout):
     for index, rule in enumerate(rules):
         kind, severity = rule['id'].split('-')[-2:]
         row = dict(id=str(uuid.uuid4()), sensor_id=rule['sensor_id'], gateway_id='demo-test-data',
-                   sensor_type='water-level', unit='m', location_id=9004 + index,
+                   sensor_type='water-level', unit='m', location_id=9000 + index,
                    value=(2.4 if severity == 'warning' else 3.4) if kind == 'level' else 0.8,
                    timestamp=baseline_time.isoformat(timespec='microseconds').replace('+00:00', 'Z'),
                    metadata={'synthetic': True, 'dataset': 'dev-test-alerts-v1', 'test_run': run,
@@ -169,19 +181,31 @@ def load_alert_demo(client, admin, backend, timeout):
     require(1 < elapsed < 60, 'rise baseline fell outside its window; rerun on a responsive development stack')
     final = []
     for row in first:
-        if '-rise-' not in row['sensor_id']:
+        if row['sensor_id'] not in (SCENARIOS['rise', 'warning'], SCENARIOS['rise', 'critical']):
             continue
-        severity = row['sensor_id'].split('-')[-1]
+        severity = 'warning' if row['sensor_id'] == SCENARIOS['rise', 'warning'] else 'critical'
         rate = 0.15 if severity == 'warning' else 0.3
         updated = {**row, 'id': str(uuid.uuid4()), 'value': round(0.8 + rate * elapsed / 60, 8),
                    'timestamp': final_time.isoformat(timespec='microseconds').replace('+00:00', 'Z')}
         final.append(updated)
-        expected[(row['sensor_id'], 'rise', severity)] = updated['id']
+        expected[(f'dev-test-rise-{severity}', 'rise', severity)] = updated['id']
     load(client, final, backend)
     print('Waiting for PostgreSQL to produce level/rise warning and critical alerts...', flush=True)
     alerts = verify_alerts(client, expected, timeout)
     print('Verified four active demo alerts and their observation evidence.', flush=True)
     return {'run': run, 'rules': rules, 'observations': first + final, 'alerts': alerts}
+
+
+def reset_fixture_data():
+    """Reset reserved synthetic fixtures, retaining quickstart and operator data."""
+    sql = (ROOT / 'deploy/scripts/reset_test_data.sql').read_text()
+    result = subprocess.run(
+        ['docker', 'compose', '-f', 'deploy/compose.yaml', 'exec', '-T', 'timescaledb',
+         'psql', '-X', '-q', '-U', 'postgres', '-d', 'sensors', '-v', 'ON_ERROR_STOP=1'],
+        input=sql, text=True, capture_output=True, cwd=ROOT)
+    require(result.returncode == 0,
+            'Cannot reset reserved test fixtures; check Docker access and reserved sensor ownership')
+    print('Reset loader-owned test observations and alert history; retained quickstart and operator data.', flush=True)
 
 
 def main(argv=None):
@@ -210,12 +234,13 @@ def main(argv=None):
         temporary = directory / 'observations.json.tmp'
         temporary.write_text(json.dumps(rows, indent=2) + '\n')
         temporary.replace(target)
-        print(f'Synthetic dataset v2: {len(rows)} observations; anchor {anchor.isoformat()}', flush=True)
+        print(f'Synthetic dataset v3: {len(rows)} observations; anchor {anchor.isoformat()}', flush=True)
         print(f'Replay with --at {anchor.isoformat()}; payload saved in {target.relative_to(ROOT)}', flush=True)
         client = Curl(key, ca)
         backend = config.get('INGESTION_BACKEND', 'api')
+        reset_fixture_data()
         load(client, rows, backend)
-        report = load_alert_demo(client, Curl(admin_key, ca), backend, args.alert_timeout)
+        report = load_alert_demo(client, Curl(admin_key, ca), backend, args.alert_timeout, history_end=anchor)
         (directory / ('alerts-' + report['run'] + '.json')).write_text(json.dumps(report, indent=2) + '\n')
         print('Dataset verified. Open Grafana with a time range including the dataset anchor.')
         return 0

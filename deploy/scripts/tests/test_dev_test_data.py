@@ -49,6 +49,15 @@ class TestDataset(unittest.TestCase):
         self.assertEqual({r['location_id'] for r in self.rows}, {9000, 9001, 9002, 9003})
         self.assertTrue(all(type(r['location_id']) is int for r in self.rows))
 
+    def test_history_and_alerts_share_four_stable_sensors(self):
+        sensors = {row['sensor_id'] for row in self.rows}
+        self.assertEqual(sensors, {'WL-002', 'WL-003', 'WL-004', 'WL-005'})
+        for scenario, sensor in data.SCENARIOS.items():
+            first = data.alert_rule('first-run', *scenario)
+            self.assertEqual(first, data.alert_rule('second-run', *scenario))
+            self.assertEqual(first['sensor_id'], sensor)
+            self.assertIn(sensor, sensors)
+
     def test_scenario_behaviour(self):
         profiles = {p: [r['value'] for r in self.rows if r['metadata']['profile'] == p] for p in data.PROFILES}
         self.assertLess(max(profiles['stable']) - min(profiles['stable']), .06)
@@ -106,7 +115,7 @@ class TestAlertDemo(unittest.TestCase):
             report = data.load_alert_demo(Mock(), admin, 'mqtt', 120)
         self.assertEqual(len(report['rules']), 4)
         self.assertEqual(len(report['observations']), 6)
-        self.assertEqual({r['location_id'] for r in report['observations']}, {9004, 9005, 9006, 9007})
+        self.assertEqual({r['location_id'] for r in report['observations']}, {9000, 9001, 9002, 9003})
         for r in report['observations'][-2:]:
             baseline = next(b for b in report['observations'][:4] if b['sensor_id'] == r['sensor_id'])
             self.assertEqual(r['location_id'], baseline['location_id'])
@@ -116,7 +125,7 @@ class TestAlertDemo(unittest.TestCase):
                          {('level', 'warning'), ('level', 'critical'), ('rise', 'warning'), ('rise', 'critical')})
         for row in report['observations'][-2:]:
             rate = (row['value'] - .8) / 5 * 60
-            self.assertAlmostEqual(rate, .15 if row['sensor_id'].endswith('warning') else .3)
+            self.assertAlmostEqual(rate, .15 if row['sensor_id'] == 'WL-004' else .3)
         for call in admin.request.call_args_list:
             self.assertEqual(call.args[1], 'POST')
             self.assertEqual(call.kwargs['resource'], '/api/v1/alert-rules')
@@ -136,6 +145,19 @@ class TestAlertDemo(unittest.TestCase):
         for alerts in ([], [{**alert, 'severity': 'warning'}]):
             with patch.object(data, 'active_alerts', return_value=alerts), self.assertRaises(data.CheckFailed):
                 data.verify_alerts(client, expected, 0)
+
+    def test_near_hour_history_leaves_live_baseline_window_before_rule_creation(self):
+        from unittest.mock import Mock
+        start = datetime(2026, 9, 14, 12, tzinfo=timezone.utc)
+        admin = Mock()
+        admin.request.return_value = (403, {})
+        with patch.object(data, 'datetime') as clock, patch.object(data.time, 'sleep') as sleep, \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(data.CheckFailed):
+            clock.now.side_effect = [start + timedelta(seconds=10),
+                                     start + timedelta(seconds=40), start + timedelta(seconds=61)]
+            data.load_alert_demo(Mock(), admin, 'api', 120, history_end=start)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [30, 21])
+        admin.request.assert_called_once()
 
     def test_rule_failure_does_not_submit_observations(self):
         from unittest.mock import Mock
