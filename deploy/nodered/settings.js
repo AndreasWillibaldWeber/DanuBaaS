@@ -24,7 +24,8 @@ module.exports = {
   apiMaxLength: "1mb",
   httpRequestTimeout: 15000,
   flowFile: '/data/flows.json',
-  nodesDir: '/opt/dbe/node_modules',
+  // Only scan node definitions; dependency HTML files are not editor nodes.
+  nodesDir: '/opt/dbe/node_modules/@flowfuse/node-red-dashboard/nodes',
   flowFilePretty: true,
   httpAdminRoot: '/admin',
   credentialSecret: secret('NODE_RED_CREDENTIAL_SECRET'),

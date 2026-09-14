@@ -122,7 +122,7 @@ for (const backend of ['api', 'mqtt']) test(`actual Node-RED flows and dashboard
   }
   fs.writeFileSync(path.join(dir, 'flows.json'), JSON.stringify(flows))
   fs.copyFileSync(path.join(runtime, 'flows_cred.json'), path.join(dir, 'flows_cred.json'))
-  const settings = `const s=require(${JSON.stringify(path.join(runtime, 'settings.js'))});s.flowFile=${JSON.stringify(path.join(dir, 'flows.json'))};s.uiPort=${port};s.uiHost='127.0.0.1';s.nodesDir=${JSON.stringify(path.join(runtime, 'node_modules'))};module.exports=s;`
+  const settings = `const s=require(${JSON.stringify(path.join(runtime, 'settings.js'))});s.flowFile=${JSON.stringify(path.join(dir, 'flows.json'))};s.uiPort=${port};s.uiHost='127.0.0.1';s.nodesDir=${JSON.stringify(path.join(runtime, 'node_modules', '@flowfuse', 'node-red-dashboard', 'nodes'))};module.exports=s;`
   fs.writeFileSync(path.join(dir, 'settings.js'), settings)
   const child = spawn(process.execPath, [process.env.NODE_RED_BIN, '--userDir', dir, '--settings', path.join(dir, 'settings.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] })
   let logs = ''
