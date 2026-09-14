@@ -129,8 +129,12 @@ func (s *Store) Put(ctx context.Context, values []sensor.Value) ([]sensor.Record
 			if v.Metadata == nil {
 				meta = []byte("{}")
 			}
-			_, err = tx.Exec(ctx, `INSERT INTO sensor.measurements(observed_at,id,sensor_id,gateway_id,sensor_type,value,unit,metadata)
-    VALUES($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8)`, v.Timestamp, v.ID, v.SensorID, v.GatewayID, v.SensorType, *v.Value, v.Unit, meta)
+			var longitude, latitude *float64
+			if v.LonLat != nil {
+				longitude, latitude = &v.LonLat[0], &v.LonLat[1]
+			}
+			_, err = tx.Exec(ctx, `INSERT INTO sensor.measurements(observed_at,id,sensor_id,gateway_id,sensor_type,value,unit,metadata,longitude,latitude,location_id)
+    VALUES($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11)`, v.Timestamp, v.ID, v.SensorID, v.GatewayID, v.SensorType, *v.Value, v.Unit, meta, longitude, latitude, v.LocationID)
 			if err != nil {
 				return nil, 0, err
 			}

@@ -3,7 +3,7 @@ const crypto = require('node:crypto')
 const mqtt = require('mqtt')
 const identifier = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const allowed = new Set(['id', 'sensor_id', 'gateway_id', 'sensor_type', 'timestamp', 'value', 'unit', 'metadata'])
+const allowed = new Set(['id', 'sensor_id', 'gateway_id', 'sensor_type', 'timestamp', 'value', 'unit', 'metadata', 'lon_lat', 'location_id'])
 const TOPIC = 'normalized/v1/batch'
 
 function invalid (message) { const error = new Error(message); error.status = 422; return error }
@@ -35,6 +35,10 @@ function validate (body) {
     if (!validTime(v.timestamp)) throw invalid('timestamp must be valid RFC3339 with at most microsecond precision')
     if (typeof v.value !== 'number' || !Number.isFinite(v.value)) throw invalid('value must be a finite number')
     if (typeof v.unit !== 'string' || v.unit.trim() !== v.unit || !v.unit || Buffer.byteLength(v.unit) > 32) throw invalid('invalid unit')
+    // Missing and null locations are equivalent; [0, 0] and location ID 0 are valid.
+    if (v.lon_lat != null && (!Array.isArray(v.lon_lat) || v.lon_lat.length !== 2 ||
+      !v.lon_lat.every(Number.isFinite) || Math.abs(v.lon_lat[0]) > 180 || Math.abs(v.lon_lat[1]) > 90)) throw invalid('lon_lat must contain longitude [-180,180] and latitude [-90,90]')
+    if (v.location_id != null && (!Number.isSafeInteger(v.location_id) || v.location_id < 0)) throw invalid('location_id must be an integer between 0 and 9007199254740991')
     if (v.metadata != null && (typeof v.metadata !== 'object' || Array.isArray(v.metadata))) throw invalid('metadata must be an object')
     if (v.metadata && Object.keys(v.metadata).some(k => !k || Buffer.byteLength(k) > 128)) throw invalid('invalid metadata key')
     if (Buffer.byteLength(JSON.stringify(v)) > 16 * 1024) throw invalid('observation exceeds 16 KiB')

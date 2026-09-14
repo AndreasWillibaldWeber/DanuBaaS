@@ -79,7 +79,8 @@ test('real Telegraf stores batches, replays safely and quarantines conflicts', {
   const publisher = createIngestion({ backend: 'mqtt', apiKey: 'a'.repeat(64), brokerURL, password: 'test' })
   t.after(() => publisher.close())
   const observation = () => ({ id: crypto.randomUUID(), sensor_id: 'telegraf-quality', sensor_type: 'water-level', timestamp: '2026-09-14T10:00:00.123456Z', value: 0, unit: 'm', metadata: { raw: { nested: [null, 1], rssi: -70 } } })
-  const a = observation(); const b = observation()
+  const a = { ...observation(), lon_lat: [16.3738, 48.2082], location_id: 7 }
+  const b = { ...observation(), lon_lat: null, location_id: null }
   // Connection establishment is asynchronous; only retry broker-unavailable errors.
   for (let i = 0; ; i++) {
     try { assert.equal((await publisher.publish([a, b])).status, 'accepted'); break } catch (err) {
@@ -90,9 +91,13 @@ test('real Telegraf stores batches, replays safely and quarantines conflicts', {
   const count = () => sql(`SELECT count(*) FROM sensor.measurements WHERE id IN ('${a.id}','${b.id}');`)
   await eventually(() => count() === '2', 'Telegraf did not commit the complete batch')
   assert.deepEqual(JSON.parse(sql(`SELECT payload->'metadata' FROM sensor.events WHERE id='${a.id}';`)), a.metadata)
+  assert.deepEqual(JSON.parse(sql(`SELECT payload->'lon_lat' FROM sensor.events WHERE id='${a.id}';`)), a.lon_lat)
+  assert.equal(sql(`SELECT longitude || ',' || latitude || ',' || location_id FROM sensor.measurements WHERE id='${a.id}';`), '16.3738,48.2082,7')
+  assert.equal(sql(`SELECT longitude IS NULL AND latitude IS NULL AND location_id IS NULL FROM sensor.measurements WHERE id='${b.id}';`), 't')
+  assert.equal(sql(`SELECT NOT (payload ? 'lon_lat' OR payload ? 'location_id') FROM sensor.events WHERE id='${b.id}';`), 't')
   await publisher.publish([a, b])
   const fresh = observation()
-  await publisher.publish([fresh, { ...a, value: 2 }])
+  await publisher.publish([fresh, { ...a, location_id: 8 }])
   await eventually(() => sql(`SELECT count(*) FROM sensor.rejected_messages WHERE payload LIKE '%${fresh.id}%';`) === '1', 'conflicting batch not quarantined')
   assert.equal(sql(`SELECT count(*) FROM sensor.events WHERE id='${fresh.id}';`), '0')
   assert.equal(count(), '2')
@@ -101,6 +106,7 @@ test('real Telegraf stores batches, replays safely and quarantines conflicts', {
   const c = observation()
   await publisher.publish(c)
   await eventually(() => sql(`SELECT count(*) FROM sensor.events WHERE id='${c.id}';`) === '1', 'poison message stalled ingestion')
+  assert.equal(sql(`SELECT longitude IS NULL AND latitude IS NULL AND location_id IS NULL FROM sensor.measurements WHERE id='${c.id}';`), 't')
   assert.equal(sql('SELECT count(*) FROM sensor.mqtt_ingest;'), '0')
   assert.ok(!telegraf.logs.includes('E!'), telegraf.logs)
 })

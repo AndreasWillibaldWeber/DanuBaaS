@@ -12,6 +12,9 @@ Authentication must be checked before any storage access.
 | Atomic persistence | Real database conflict after a new item rolls everything back |
 | Retry safety | Same ID/content returns original sequence and reception time |
 | Race conditions | Race detector and concurrent retries against fake and real stores |
+| Optional locations | HTTP and Node-RED: missing/null independently, both fields, zero, bounds, wrong types, pair length/order, and invalid final item |
+| Location persistence | Go and MQTT: typed columns, GET/list, reporting view, mixed batches without field leakage, cross-route retries, location conflicts, and database constraints |
+| Location transport | Real Node-RED and Telegraf preserve coordinates and IDs; explicit nulls become absent canonical fields and SQL NULL |
 | Data quality | Missing/null/zero, timezone normalization, precision, overflow |
 | Hostile inputs | Duplicate JSON keys, excessive depth/size, trailing JSON, wrong types |
 | Cursor traversal | Stable ordering, next headers, empty arrays, invalid cursors |
@@ -55,7 +58,8 @@ TimescaleDB service. Never point `TEST_DATABASE_URL` at production.
    Telegraf from publishing. Test queue exhaustion and restart recovery separately
    before claiming durable delivery.
 8. Create a backup and restore it into a fresh disposable database. Reapply roles
-   and grants, then compare observation counts and representative metadata.
+   and grants, then compare observation counts, representative metadata, and optional
+   locations. Verify pre-upgrade observations still replay with omitted or null locations.
 
 See the deployment guide for environment-specific verification limitations. A
 passing mock-based test is not a substitute for these deployment checks.
@@ -67,3 +71,17 @@ compares every secret and certificate. The startup smoke-test contract uses a
 controlled HTTP peer; only a successful `make dev` against Docker verifies the
 complete startup. In this workspace, `make dev` currently stops at the missing
 Docker Compose plugin prerequisite, so full bootstrap startup remains unverified.
+
+## Optional location verification
+
+The location change was checked with the Go race detector and static analysis,
+HTTP validation/read/retry tests, database integration tests, both actual Node-RED
+runtime routes, and real Mosquitto/Telegraf ingestion. A separate disposable
+version-2 database verified that migration `003` preserves existing payloads,
+metadata, IDs, timestamps, and sequences; the new columns remain NULL and old
+observations replay with omitted or null locations.
+
+Local database checks used PostgreSQL 16 without the TimescaleDB extension. They
+verify SQL behavior and transport, but do not establish hypertable migration or
+full container-stack compatibility. CI's TimescaleDB suite and the deployment
+acceptance checks above remain required before release.

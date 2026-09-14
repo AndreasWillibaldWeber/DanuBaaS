@@ -131,7 +131,8 @@ Replace or qualify the data dictionary at lines 42–53:
 | `sensor-type` | `sensor_type` |
 | `time-stamp` | `timestamp`: RFC3339 with timezone, at most microsecond precision; stored normalized to UTC. |
 | `water-level` | Numeric `value` plus required `unit`, e.g. `m`. |
-| `lon-lat`, `ref-to-zero`, `deviation`, `rssi`, `check-sum`, `hash` | Optional metadata fields. The names inside metadata must be agreed/documented; storing checksum/hash values does not verify them. |
+| `lon-lat` or numeric location ID | Top-level `lon_lat: [longitude, latitude]` and `location_id`; both independently optional/nullable. Typed storage and reporting columns exist; no registry lookup or location-decoding file is implemented. |
+| `ref-to-zero`, `deviation`, `rssi`, `check-sum`, `hash` | Optional metadata fields. The names inside metadata must be agreed/documented; storing checksum/hash values does not verify them. |
 | Not in report | Server-generated `sequence` and `received_at` in API responses; clients do not submit them as observation fields. |
 
 The original dictionary may remain useful if titled **proposed gateway wire
@@ -141,7 +142,7 @@ mapping is specified, not an already implemented generic decoder.
 Describe the actual storage objects:
 
 - `sensor.events`: global UUID uniqueness, canonical payload, receipt time, sequence.
-- `sensor.measurements`: event-time hypertable with typed measurements and metadata.
+- `sensor.measurements`: event-time hypertable with typed measurements, nullable longitude/latitude and location ID, and metadata.
 - `sensor.dashboard_values`: read-only reporting view used by Grafana.
 - `sensor.mqtt_ingest`: transient INSERT/COPY interface, consumed by a SQL trigger.
 - `sensor.rejected_messages`: rejected MQTT documents and error reasons.
@@ -182,12 +183,13 @@ Revise `content/05-evaluation-transfer.tex`, lines 18–20 and 31–32:
   API keys, restrict that statement to machine clients; no passwordless browser
   code-login flow is implemented.
 - Remove the claim that a desktop app and decoding file resolve locations.
-  No such component exists. Metadata can contain location identifiers or
-  coordinates, and Grafana's reporting view can expose that metadata.
+  No such component exists. The API accepts optional `lon_lat` and `location_id`,
+  and Grafana's reporting view exposes typed longitude, latitude, and location ID.
+  These fields do not resolve IDs to coordinates or provide a map dashboard.
 - Replace the categorical privacy assurance with an explicit data-minimization
   policy and description of data actually collected, including authentication
   and operational data. The implementation does not prevent users from putting
-  identifying information in metadata.
+  identifying information in metadata or optional location fields.
 - Acknowledge custom maintenance work: Go API, Node-RED authentication/publisher,
   SQL ingestion trigger, and setup/preflight scripts. State why these additions
   were chosen despite the preference for standard software.

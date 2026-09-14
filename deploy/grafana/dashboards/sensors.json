@@ -55,7 +55,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT time, sensor_id, sensor_type, value, unit, metadata FROM sensor.dashboard_values ORDER BY time DESC LIMIT 100",
+          "rawSql": "SELECT time, sensor_id, sensor_type, value, unit, longitude, latitude, location_id, metadata FROM sensor.dashboard_values ORDER BY time DESC LIMIT 100",
           "editorMode": "code"
         }
       ],

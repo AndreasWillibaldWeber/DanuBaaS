@@ -163,11 +163,15 @@ for (const backend of ['api', 'mqtt']) test(`actual Node-RED flows and dashboard
   assert.equal(await socketOutcome(port, cookie, origin), true)
   assert.equal(await socketOutcome(port, cookie, 'https://evil.test'), false)
   assert.equal((await call('/api/v1/values', { headers: { 'X-API-Key': apiKey } })).status, 200)
-  const observation = { id: '12345678-1234-4234-8234-123456789001', sensor_id: 's1', gateway_id: 'demo', sensor_type: 'water-level', timestamp: '2026-09-14T10:00:00.123456Z', value: 0, unit: 'm', metadata: { nested: [null, 3] } }
+  const observation = { id: '12345678-1234-4234-8234-123456789001', sensor_id: 's1', gateway_id: 'demo', sensor_type: 'water-level', timestamp: '2026-09-14T10:00:00.123456Z', value: 0, unit: 'm', lon_lat: [16.3738, 48.2082], location_id: 7, metadata: { nested: [null, 3] } }
   const write = body => call('/api/v1/values', { method: 'POST', headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  assert.equal((await write(observation)).status, backend === 'mqtt' ? 202 : 201)
-  const batch = [observation, { ...observation, id: '12345678-1234-4234-8234-123456789002' }]
-  assert.equal((await write(batch)).status, backend === 'mqtt' ? 202 : 201)
+  const singleResponse = await write(observation)
+  assert.equal(singleResponse.status, backend === 'mqtt' ? 202 : 201)
+  if (backend === 'api') assert.deepEqual(await singleResponse.json(), observation)
+  const batch = [observation, { ...observation, id: '12345678-1234-4234-8234-123456789002', lon_lat: null, location_id: null }]
+  const batchResponse = await write(batch)
+  assert.equal(batchResponse.status, backend === 'mqtt' ? 202 : 201)
+  if (backend === 'api') assert.deepEqual(await batchResponse.json(), batch)
   assert.equal((await call('/api/v1/values', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(observation) })).status, 401)
   for (const url of ['/api/v1/values/', '/API/V1/VALUES']) {
     assert.equal((await call(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(observation) })).status, 401)

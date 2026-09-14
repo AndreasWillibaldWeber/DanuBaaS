@@ -103,8 +103,9 @@ must exist before Mosquitto can queue messages for an offline Telegraf consumer.
 
 ### Upgrade an existing deployment
 
-Add the two new credentials without changing existing ones, build the new images,
-and run the versioned migration and grants before starting Telegraf:
+When upgrading an installation that predates Telegraf, add its credentials without
+changing existing ones. Build the new images and apply all pending migrations
+and grants before starting the updated ingestion services:
 
 ```sh
 node deploy/scripts/add-telegraf-secrets.mjs
@@ -123,7 +124,13 @@ and matching configuration nodes. Preserve any custom flows. Review the import
 and deploy it; there must be only one GET and one POST HTTP In node for
 `/api/v1/values`. The new demo flow contains **Select ingestion backend**.
 Rebuilding the image alone does not update persisted flows. Do not delete volumes
-to upgrade: migration `002` retains all existing observations.
+to upgrade: migrations `002` and `003` retain all existing observations.
+
+For an installation already using selectable ingestion, the location-field upgrade
+requires rebuilding images and running the migration, then recreating services using
+`up -d` as above. No flow reimport or new credentials are needed for this upgrade.
+Migration `003` adds nullable location columns and updates the MQTT adapter; existing
+observations remain readable and replayable. See [location compatibility](../docs/locations.md).
 
 Local Compose secrets are bind-mounted files, not an encrypted secret store. The
 host secrets directory is private (`0700`); individual mounted secret files are
@@ -188,6 +195,8 @@ Save this as `value.json`:
   "timestamp": "2026-09-14T10:00:00Z",
   "value": 1.42,
   "unit": "m",
+  "lon_lat": [16.3738, 48.2082],
+  "location_id": 7,
   "metadata": {"packet_id": 42, "deviation": 0.02, "rssi": -78}
 }
 ```
@@ -284,8 +293,10 @@ observations at the sender and confirm them through GET when delivery matters.
 
 The report's wire fields map as follows: `sid` → `sensor_id`, `gid` → `gateway_id`,
 `sensor-type` → `sensor_type`, `time-stamp` → `timestamp`, and `water-level` →
-`value` with unit `m`. Preserve packet `id`, checksum/hash, `lon-lat` or location ID,
-`ref-to-zero`, deviation, and RSSI in `metadata`. The API observation UUID is a
+`value` with unit `m`. Map the report's `lon-lat` pair to top-level `lon_lat`
+in [longitude, latitude] order and its numeric location ID to `location_id`.
+Both fields are optional and accept `null`, independently. Preserve packet `id`,
+checksum/hash, `ref-to-zero`, deviation, and RSSI in `metadata`. The API observation UUID is a
 separate retry identity; a resetting packet counter is not globally unique.
 The demo expects this canonical schema; legacy payload adapters can be added as
 versioned Node-RED flows once actual examples are available.

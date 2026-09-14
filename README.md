@@ -69,12 +69,13 @@ demo dataset; per-device authorization is a separate concern from this demonstra
   "timestamp": "2026-09-14T10:00:00Z",
   "value": 1.42,
   "unit": "m",
+  "lon_lat": [16.3738, 48.2082],
+  "location_id": 7,
   "metadata": {
     "packet_id": 42,
     "ref_to_zero": 312.5,
     "deviation": 0.02,
-    "rssi": -78,
-    "location_id": 7
+    "rssi": -78
   }
 }
 ```
@@ -85,6 +86,23 @@ is rejected because PostgreSQL cannot preserve it. `value` must be a finite numb
 zero is valid; missing and null values are rejected. `unit` is required and limited
 to 32 UTF-8 bytes. Arbitrary source-specific JSON belongs in `metadata`; unknown
 top-level fields are rejected.
+
+Location fields are independent and optional on every observation:
+
+| Field | JSON type and meaning |
+| --- | --- |
+| `lon_lat` | Two numbers in **[longitude, latitude]** order, WGS84 decimal degrees; longitude −180…180, latitude −90…90 |
+| `location_id` | Integer from 0 to 9007199254740991, identifying a location in your own registry |
+
+Either field can be omitted or `null`; both can be supplied together. `[0, 0]`
+and ID `0` are valid. A coordinate pair must contain exactly two finite numbers;
+partial pairs, strings, and null array elements are rejected. Send `location_id`
+as an integer JSON literal. Its bound avoids precision loss in Node-RED.
+Missing and null fields are omitted in POST/GET responses and stored as SQL NULL,
+so they are interchangeable on retries. Supplying, changing, or removing a location
+on an existing observation ID is a conflict. No location registry, coordinate
+lookup, or consistency check between the two fields is implemented.
+See [location examples and storage details](docs/locations.md).
 
 Responses add `sequence` and server-generated `received_at`. POST bodies must omit
 those response-only fields. Do not post an unmodified GET response as a new input.
@@ -166,6 +184,13 @@ database connection.
 This adapter does not change the direct API's response contract. Node-RED's
 optional MQTT mode returns `202` after broker acknowledgment and provides eventual
 read visibility. See [route selection and delivery semantics](deploy/README.md#select-the-node-red-write-route).
+
+`003_optional_locations.sql` adds nullable `longitude double precision`,
+`latitude double precision`, and `location_id bigint` columns to measurements and
+appends them to the reporting view. Database constraints enforce coordinate pairs,
+ranges, and the location ID bound. The MQTT adapter applies the same location
+rules. Existing payloads and any location data inside metadata remain unchanged;
+there is no automatic backfill or promotion from metadata.
 
 Migrations are embedded and executed explicitly with `sensor-api migrate` under an
 administrative role. They are transactionally versioned and safe to run again.

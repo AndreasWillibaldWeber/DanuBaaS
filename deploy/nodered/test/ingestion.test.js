@@ -91,3 +91,26 @@ test('Node-RED authenticates POST independently of the selected backend', () => 
     service.close()
   }
 })
+test('optional locations preserve coordinates, IDs, zero, bounds, and null independently', () => {
+  for (const location of [{}, { lon_lat: null, location_id: null }, { lon_lat: [16.3738, 48.2082] },
+    { location_id: 7 }, { lon_lat: [0, 0], location_id: 0 },
+    { lon_lat: [-180, -90], location_id: Number.MAX_SAFE_INTEGER }, { lon_lat: [180, 90], location_id: null },
+    { lon_lat: null, location_id: 7 }]) {
+    const body = { ...value(), ...location }
+    assert.deepEqual(JSON.parse(validate(body).encoded), body)
+  }
+})
+test('invalid location anywhere in a batch prevents MQTT publication', async () => {
+  const client = fake()
+  const service = createIngestion({ backend: 'mqtt', apiKey: key, connect: () => client })
+  for (const location of [
+    ...[[], [1], [1, 2, 3], [null, 1], [1, null], ['1', 2], {}, false, [Infinity, 0], [NaN, 0],
+      [180.01, 0], [-180.01, 0], [0, 90.01], [0, -90.01]].map(lon_lat => ({ lon_lat })),
+    ...[-1, Number.MAX_SAFE_INTEGER + 1, 1.5, '7', true, [], {}, Infinity, NaN].map(location_id => ({ location_id }))
+  ]) {
+    const bad = { ...value(), ...location, id: '12345678-1234-4234-8234-123456789002' }
+    for (const body of [bad, [value(), bad]]) await assert.rejects(service.publish(body), err => err.status === 422)
+  }
+  assert.equal(client.published.length, 0)
+  service.close()
+})
