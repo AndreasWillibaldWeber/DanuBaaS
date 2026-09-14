@@ -102,3 +102,10 @@ acceptance test. Follow [quality.md](../docs/quality.md) for deployment verifica
 and the [operations guide](README.md#persistence-and-operations) for backups and
 rotation. Updating password files alone does not rotate existing database roles
 or Grafana's initial administrator password. Never delete volumes to rotate secrets.
+
+## Debian host security
+
+Use the [Debian host-security baseline](../security/debian/README.md) for nftables
+(including Docker forwarding), SSH, fail2ban, security updates, and an operations
+checklist. Host policies are applied explicitly on the server and are never run
+by `make dev` or `make prod`. Firewall changes support a timed trial and rollback.

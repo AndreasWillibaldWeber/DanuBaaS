@@ -1,3 +1,8 @@
+> Host-security update: [security/debian](../security/debian/README.md) now supplies
+> nftables trial/rollback tooling and SSH, fail2ban, sysctl and security-update
+> policies. Applying and validating these policies on the production host remains
+> a separate deployment responsibility.
+
 > Update: migration `004` now implements configurable warning/critical water-level
 > and rise-rate rules, stale-data detection, persistent history, acknowledgment and
 > optional webhook delivery. See [alerting.md](alerting.md). Statements below that

@@ -114,3 +114,18 @@ failed deliveries, stable idempotency identifiers, and redirect rejection.
 Bootstrap tests cover alert parameter validation, new credentials, preserved rule
 files, and fresh/repeated setup. Full deployment verification still requires
 `make dev` with an accessible Docker daemon.
+
+## Debian host-security tooling
+
+`make test-security` validates policy rendering, input rejection, firewall trial
+ordering, rollback, persistence confirmation and failure recovery without changing
+the host. The real nftables network test uses isolated namespaces and checks IPv4
+and IPv6 SSH source restrictions, allowed web/MQTT DNAT, forbidden internal ports,
+direct-container access, container egress, repeat loading and scoped restoration.
+These tests passed in the development workspace; shell syntax, generated APT
+configuration and systemd unit checks are also part of the local review.
+
+This is not evidence of a completed Debian server rollout. SSH effective policy,
+fail2ban integration, update behavior, timed systemd recovery, actual Docker
+networking and reboot persistence still require the disposable-VM acceptance
+steps in [the host-security guide](../security/debian/README.md).

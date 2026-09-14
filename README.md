@@ -276,3 +276,9 @@ The imported backend, deployment, tests, and documentation retain their
 [Apache-2.0 license](LICENSES/Apache-2.0.txt). The initial repository material
 retains its [MIT license](LICENSE). See [NOTICE](NOTICE) for scope and provenance.
 The workshop report and its original images are not included in this repository.
+
+## Debian host hardening
+
+[security/debian](security/debian/README.md) contains policy generation, an
+nftables trial/rollback installer, SSH/fail2ban/update templates and operational
+guidance. Run `make test-security` to validate the tools without changing the host.
