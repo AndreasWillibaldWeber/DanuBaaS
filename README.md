@@ -8,8 +8,10 @@ The API exposes one resource for immutable sensor observations.
 `GET /api/v1/values` returns one observation by ID or an ordered page of observations.
 Both methods require an `X-API-Key` header.
 
-**Start the complete development environment with `make dev`.** See the
-[short quick start](QUICKSTART.md) or [production configuration](deploy/PRODUCTION.md).
+**Start the complete development environment with `make dev`.**
+Use `make dev-test-data` for populated charts and verified demonstration alerts;
+see [test data and replay](docs/test-data.md). Setup instructions are in the
+[quick start](QUICKSTART.md) and [production guide](deploy/PRODUCTION.md).
 
 The implementation uses Go's HTTP server and pgx, with PostgreSQL transactions and
 TimescaleDB storage. It has no ORM, application framework, or in-memory production

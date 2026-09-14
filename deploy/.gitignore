@@ -3,4 +3,5 @@
 secrets/
 certs/
 backups/
+test-data/
 nodered/node_modules/

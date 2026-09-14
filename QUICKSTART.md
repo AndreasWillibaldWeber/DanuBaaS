@@ -1,7 +1,7 @@
 # Quick start
 
 Install Docker Engine with Compose v2.20+, Node.js 22.9+ with npm, Python 3.9+,
-OpenSSL, and Make. Docker must be running and accessible to your user.
+OpenSSL, and Make. The test-data loader also requires curl. Docker must be running and accessible to your user.
 
 From `DanuBaaS/` (the directory containing `go.mod`), run:
 
@@ -13,6 +13,11 @@ This installs dependencies, generates local credentials and certificates, builds
 and starts all services, and verifies a sample Node-RED write and database read.
 It also loads the development alert parameters and verifies the PostgreSQL evaluator.
 Rerunning preserves credentials, saved flows, and database volumes.
+
+For populated charts and real demonstration alerts, run `make dev-test-data` instead.
+It starts the same environment, loads 24 hours of synthetic observations through
+both HTTP routes, creates isolated demo rules, and verifies four scheduled alerts.
+See [development test data](docs/test-data.md) for replay, retained data, and parameters.
 
 Trust `deploy/certs/caddy-root.crt` in your browser/OS. Read your passwords locally
 from `deploy/secrets/operator-credentials.json`.

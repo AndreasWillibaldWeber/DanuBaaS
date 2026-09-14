@@ -1,9 +1,13 @@
 .DEFAULT_GOAL := test
-.PHONY: test integration vet build fmt dev prod prod-check test-deploy test-e2e test-security
+.PHONY: test integration vet build fmt dev dev-test-data prod prod-check test-deploy test-e2e test-security
 
 # These commands never delete volumes or rotate existing credentials.
 dev:
 	python3 deploy/scripts/environment.py dev
+
+# Start development services, then load and verify synthetic observations over HTTP.
+dev-test-data: dev
+	python3 deploy/scripts/dev_test_data.py $(TEST_DATA_ARGS)
 
 prod:
 	python3 deploy/scripts/environment.py prod

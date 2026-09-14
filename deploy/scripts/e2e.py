@@ -31,8 +31,8 @@ class Curl:
         self.cacert = cacert
         self.request_timeout = request_timeout
 
-    def request(self, base, method='GET', body=None, query=None, authenticated=True):
-        url = base.rstrip('/') + RESOURCE
+    def request(self, base, method='GET', body=None, query=None, authenticated=True, resource=RESOURCE):
+        url = base.rstrip('/') + resource
         if query:
             url += '?' + urlencode(query)
         # Ignore ~/.curlrc, retain TLS verification, and never follow redirects with a key.

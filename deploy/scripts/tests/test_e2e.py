@@ -168,6 +168,8 @@ class EndToEndVerifierTests(unittest.TestCase):
             self.assertEqual(received[0], ('k' * 32, {'value': 0}))
             self.assertEqual(client.request(endpoint)[0], 302)
             self.assertEqual(received[1:], ['/api/v1/values'])
+            self.assertEqual(client.request(endpoint, resource='/api/v1/alerts', query={'active': 'true'})[0], 302)
+            self.assertEqual(received[2:], ['/api/v1/alerts?active=true'])
         finally:
             server.shutdown()
             server.server_close()

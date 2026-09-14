@@ -44,6 +44,10 @@ DanuBaaS/                       Go module and Docker build context
 
 ## Start locally
 
+For a populated demonstration, `make dev-test-data` starts the development stack,
+loads synthetic history through Node-RED and the direct API, and verifies real
+scheduled level and rise-rate alerts. See [test data](../docs/test-data.md).
+
 The recommended command is `make dev` from `DanuBaaS/`. It requires Python 3.9+
 and Make in addition to the tools below, preserves existing credentials and data,
 exports Caddy's local CA, and verifies a fresh sample through the Node-RED REST
