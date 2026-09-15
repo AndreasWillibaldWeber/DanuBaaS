@@ -15,6 +15,12 @@ Document any public contract change in `docs/openapi.yaml` and `README.md`. Chan
 to ingestion semantics require tests for retries, partial failure, and concurrency.
 Use a new migration for schema changes. Never rewrite an applied migration.
 
+Update the corresponding `docs/` guide when behavior or operator steps change.
+Documentation changes require `python -m mkdocs build --strict` after installing
+`docs-requirements.txt` in a virtual environment. See
+[the documentation contribution guide](docs/contributing.md) for local preview and
+the GitHub Pages workflow.
+
 Keep credentials, raw production measurements, personal data, generated binaries,
 and local test databases out of commits. Dependencies must remain pinned by
 `go.sum`; review dependency upgrades and rerun the tests before merging them.

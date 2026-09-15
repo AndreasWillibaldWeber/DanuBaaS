@@ -46,7 +46,7 @@ docker compose -p dbe-sensors-production --env-file deploy/.env.production \
 
 Do not delete volumes as part of this move. Saved Node-RED flows remain in their
 volume; image rebuilds do not overwrite edits made through the editor. The
-[deployment guide](../deploy/README.md#upgrade-an-existing-deployment) explains
+[deployment guide](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/deploy/README.md#upgrade-an-existing-deployment) explains
 upgrading older flow definitions.
 
 The workshop report and original images remain outside this repository. The

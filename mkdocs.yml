@@ -1,0 +1,76 @@
+site_name: DanuBaaS
+site_url: https://andreaswillibaldweber.github.io/DanuBaaS/
+site_description: An authenticated sensor backend with immutable observations, selectable ingestion, and water-level monitoring.
+repo_url: https://github.com/AndreasWillibaldWeber/DanuBaaS
+repo_name: AndreasWillibaldWeber/DanuBaaS
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+theme:
+  name: material
+  language: en
+  logo: assets/icon.svg
+  favicon: assets/icon.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+plugins:
+  - search
+extra_css:
+  - assets/styles.css
+nav:
+  - Overview: index.md
+  - Get started:
+      - Quick start: getting-started.md
+      - Development test data: test-data.md
+  - Concepts:
+      - Architecture and data flow: architecture.md
+      - Observation locations: locations.md
+      - Measured ranges: measurement-ranges.md
+  - API:
+      - Observation API: api.md
+      - Water-level alerts: alerting.md
+      - OpenAPI specification: openapi.md
+  - Operate:
+      - Deployment and operations: operations.md
+      - Monitoring dashboard: monitoring-dashboard.md
+      - Security model: security.md
+  - Quality:
+      - Quality strategy: quality.md
+      - End-to-end verification: end-to-end-testing.md
+  - Project:
+      - Contributing: contributing.md
+      - Repository migration: repository-migration.md
+      - Workshop alignment: report-alignment.md

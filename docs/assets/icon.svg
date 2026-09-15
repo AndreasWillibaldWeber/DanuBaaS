@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">DanuBaaS sensor data icon</title>
+  <rect width="64" height="64" rx="14" fill="#10354f"/>
+  <path d="M12 41c6 0 6-14 12-14s6 14 12 14 6-14 12-14" fill="none" stroke="#4dd0cd" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
+  <circle cx="48" cy="27" r="4" fill="#e7b765"/>
+  <path d="M15 49h34" fill="none" stroke="#dceaf0" stroke-linecap="round" stroke-width="3" opacity=".85"/>
+</svg>

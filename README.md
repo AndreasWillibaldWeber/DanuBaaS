@@ -1,7 +1,14 @@
 # DanuBaaS
 
+![DanuBaaS repository banner](docs/assets/banner.svg)
+
 DanuBaaS provides a sensor backend with a Go API, selectable Node-RED ingestion,
 Mosquitto, Telegraf, TimescaleDB, and authenticated Grafana/Node-RED dashboards.
+
+Read the [project documentation](https://andreaswillibaldweber.github.io/DanuBaaS/)
+for a guided quick start, architecture, API contract, operations, security model,
+and release verification. The [small project icon](docs/assets/icon.svg) is also
+used by the documentation site.
 
 The API exposes one resource for immutable sensor observations.
 `POST /api/v1/values` accepts one observation or an atomic batch;

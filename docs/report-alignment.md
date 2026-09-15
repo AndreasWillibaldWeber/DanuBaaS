@@ -1,4 +1,4 @@
-> Host-security update: [security/debian](../security/debian/README.md) now supplies
+> Host-security update: [security/debian](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/security/debian/README.md) now supplies
 > nftables trial/rollback tooling and SSH, fail2ban, sysctl and security-update
 > policies. Applying and validating these policies on the production host remains
 > a separate deployment responsibility.
@@ -273,9 +273,9 @@ deployment, real data evaluation, restore reliability, or economic benefits,
 corresponding execution and evidence are needed. Marking these as future work
 aligns the report with the PoC; it does not complete the original operational goals.
 
-Implementation references: [API contract](../README.md),
-[schema migrations](../internal/postgres/migrations),
-[Compose](../deploy/compose.yaml), [Node-RED flows](../deploy/nodered/flows.json),
-[MQTT ACL](../deploy/mosquitto/acl), [Telegraf](../deploy/telegraf/telegraf.conf),
-[Grafana dashboard](../deploy/grafana/dashboards/sensors.json),
+Implementation references: [API contract](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/README.md),
+[schema migrations](https://github.com/AndreasWillibaldWeber/DanuBaaS/tree/main/internal/postgres/migrations),
+[Compose](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/deploy/compose.yaml), [Node-RED flows](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/deploy/nodered/flows.json),
+[MQTT ACL](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/deploy/mosquitto/acl), [Telegraf](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/deploy/telegraf/telegraf.conf),
+[Grafana dashboard](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/deploy/grafana/dashboards/sensors.json),
 [quality evidence and limitations](quality.md).

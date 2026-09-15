@@ -42,3 +42,6 @@ deploy/alerts.json
 # Site-specific host security configuration belongs outside the checkout.
 security/debian/host.json
 security/debian/generated/
+# MkDocs output and local documentation environment
+site/
+.venv/

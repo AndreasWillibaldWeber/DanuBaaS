@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">DanuBaaS</title>
+  <desc id="desc">Sensor data flows through an authenticated backend into a database and monitoring dashboard.</desc>
+  <defs>
+    <linearGradient id="background" x2="1" y2="1">
+      <stop stop-color="#0d2f49"/>
+      <stop offset="1" stop-color="#174765"/>
+    </linearGradient>
+    <linearGradient id="wave" x2="1" y2="0">
+      <stop stop-color="#4dd0cd"/>
+      <stop offset="1" stop-color="#8fe3dc"/>
+    </linearGradient>
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M30 0H0V30" fill="none" stroke="#ffffff" stroke-width="1" opacity=".045"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="300" rx="24" fill="url(#background)"/>
+  <rect width="1200" height="300" rx="24" fill="url(#grid)"/>
+  <circle cx="994" cy="147" r="154" fill="#4dd0cd" opacity=".055"/>
+  <circle cx="1080" cy="35" r="96" fill="#ffffff" opacity=".035"/>
+  <g transform="translate(69 77)">
+    <rect width="146" height="146" rx="34" fill="#0a273d" stroke="#86d9d2" stroke-opacity=".35" stroke-width="2"/>
+    <path d="M25 96c15 0 15-36 30-36s15 36 30 36 15-36 30-36" fill="none" stroke="url(#wave)" stroke-linecap="round" stroke-linejoin="round" stroke-width="11"/>
+    <circle cx="115" cy="60" r="9" fill="#e7b765"/>
+    <path d="M33 116h81" fill="none" stroke="#dceaf0" stroke-linecap="round" stroke-width="5" opacity=".85"/>
+  </g>
+  <text x="258" y="145" fill="#ffffff" font-family="DejaVu Sans, Arial, sans-serif" font-size="64" font-weight="700" letter-spacing="-2">DanuBaaS</text>
+  <text x="260" y="191" fill="#c4d9e3" font-family="DejaVu Sans, Arial, sans-serif" font-size="22">Reliable sensor observations, from ingest to insight.</text>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -50)">
+    <path d="M811 178h58m38 0h58m38 0h58" stroke="#83c4c4" stroke-width="3" opacity=".55"/>
+    <circle cx="887" cy="178" r="19" stroke="#85d8d0" stroke-width="3"/>
+    <circle cx="983" cy="178" r="19" stroke="#85d8d0" stroke-width="3"/>
+    <circle cx="1079" cy="178" r="19" stroke="#85d8d0" stroke-width="3"/>
+    <path d="M879 181l5-8 5 9 5-7" stroke="#4dd0cd" stroke-width="2.5"/>
+    <path d="M973 172v13m7-17v21m7-15v11" stroke="#4dd0cd" stroke-width="2.5"/>
+    <path d="M1069 184l8-8 7 4 8-11" stroke="#4dd0cd" stroke-width="2.5"/>
+  </g>
+  <text x="811" y="237" fill="#89bec5" font-family="DejaVu Sans, Arial, sans-serif" font-size="13" letter-spacing="2">INGEST  ·  STORE  ·  MONITOR</text>
+</svg>

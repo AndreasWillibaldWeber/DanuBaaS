@@ -129,7 +129,7 @@ configuration and systemd unit checks are also part of the local review.
 This is not evidence of a completed Debian server rollout. SSH effective policy,
 fail2ban integration, update behavior, timed systemd recovery, actual Docker
 networking and reboot persistence still require the disposable-VM acceptance
-steps in [the host-security guide](../security/debian/README.md).
+steps in [the host-security guide](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/security/debian/README.md).
 
 ## Development dataset verification
 

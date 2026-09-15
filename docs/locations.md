@@ -55,7 +55,7 @@ curl --fail-with-body --cacert deploy/certs/caddy-root.crt \
 ```
 
 Replace `flows.localhost` with `api.localhost` to use the Go API directly.
-For other deployment settings, follow [the deployment examples](../deploy/README.md#demonstrate-the-api).
+For other deployment settings, follow [the deployment examples](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/deploy/README.md#demonstrate-the-api).
 
 For an unknown location, omit both fields or set each to `null` in the observation:
 `"lon_lat": null` and `"location_id": null`.
@@ -89,7 +89,7 @@ LIMIT 100;
 
 Apply migration `003_optional_locations.sql` with the migration service before
 running the rebuilt API and Node-RED images; follow the
-[existing-deployment upgrade procedure](../deploy/README.md#upgrade-an-existing-deployment).
+[existing-deployment upgrade procedure](https://github.com/AndreasWillibaldWeber/DanuBaaS/blob/main/deploy/README.md#upgrade-an-existing-deployment).
 Do not delete volumes or edit previously applied migrations. The new columns are
 nullable, and existing observations keep their original IDs, sequences, timestamps,
 and canonical JSON. Existing location fields inside `metadata` remain there and
