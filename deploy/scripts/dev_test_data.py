@@ -11,6 +11,7 @@ import sys
 import time
 import uuid
 
+from demo_stations import COORDINATES
 from e2e import CheckFailed, Curl, read_event, require, verify_record
 from environment import read_env, ConfigurationError
 
@@ -53,26 +54,28 @@ def historical_level(profile, step):
 
 def station_attributes(profile):
     index = PROFILES.index(profile)
-    attributes = {'location_id': 9000 + index}
-    if index % 2 == 0:
-        attributes['lon_lat'] = [12.96 + index * 0.001, 48.83]
-    return attributes
+    return {'location_id': 9000 + index, 'lon_lat': list(COORDINATES[SENSORS[profile]])}
+
+
+def measurement_range(value):
+    # Deliberately asymmetric measured extrema, expressed in the same unit.
+    return {'minimum': round(value - 0.04, 8), 'maximum': round(value + 0.06, 8)}
 
 
 def dataset(anchor):
-    """Version 4: 145 points per sensor, ten-minute spacing over 24 hours."""
+    """Version 6: 145 points per sensor, ten-minute spacing over 24 hours."""
     stamp = anchor.isoformat(timespec='microseconds').replace('+00:00', 'Z')
     rows = []
     for index, profile in enumerate(PROFILES):
         for step in range(145):
             level = historical_level(profile, step)
             observation = dict(
-                id=str(uuid.uuid5(NAMESPACE, f'v4/{stamp}/{profile}/{step}')),
+                id=str(uuid.uuid5(NAMESPACE, f'v6/{stamp}/{profile}/{step}')),
                 sensor_id=SENSORS[profile], gateway_id='demo-test-data',
                 sensor_type='water-level', unit='m', value=round(level, 4),
                 timestamp=(anchor - timedelta(minutes=(144 - step) * 10)).isoformat(timespec='microseconds').replace('+00:00', 'Z'),
-                metadata={'synthetic': True, 'dataset': 'dev-test-data-v4',
-                          'profile': profile, 'anchor': stamp,
+                metadata={'synthetic': True, 'dataset': 'dev-test-data-v6',
+                          'profile': profile, 'anchor': stamp, **measurement_range(level),
                           'ingestion_route': 'api' if index % 2 == 0 else 'node-red'})
             observation.update(station_attributes(profile))
             rows.append(observation)
@@ -183,9 +186,10 @@ def load_alert_demo(client, admin, backend, timeout, history_end=None):
                    sensor_type='water-level', unit='m', **station_attributes(f'{kind}-{severity}'),
                    value=historical_level(f'{kind}-{severity}', 144),
                    timestamp=baseline_time.isoformat(timespec='microseconds').replace('+00:00', 'Z'),
-                   metadata={'synthetic': True, 'dataset': 'dev-test-alerts-v2', 'test_run': run,
+                   metadata={'synthetic': True, 'dataset': 'dev-test-alerts-v4', 'test_run': run,
                              'profile': f'{kind}-{severity}',
                              'ingestion_route': 'api' if severity == 'warning' else 'node-red'})
+        row['metadata'].update(measurement_range(row['value']))
         first.append(row)
         if kind == 'level':
             expected[(rule['id'], kind, severity)] = row['id']
@@ -202,6 +206,7 @@ def load_alert_demo(client, admin, backend, timeout, history_end=None):
         rate = 0.15 if severity == 'warning' else 0.3
         updated = {**row, 'id': str(uuid.uuid4()), 'value': round(row['value'] + rate * elapsed / 60, 8),
                    'timestamp': final_time.isoformat(timespec='microseconds').replace('+00:00', 'Z')}
+        updated['metadata'] = {**row['metadata'], **measurement_range(updated['value'])}
         final.append(updated)
         expected[(f'dev-test-rise-{severity}', 'rise', severity)] = updated['id']
     load(client, final, backend)
@@ -249,7 +254,7 @@ def main(argv=None):
         temporary = directory / 'observations.json.tmp'
         temporary.write_text(json.dumps(rows, indent=2) + '\n')
         temporary.replace(target)
-        print(f'Synthetic dataset v4: {len(rows)} observations; anchor {anchor.isoformat()}', flush=True)
+        print(f'Synthetic dataset v6: {len(rows)} observations; anchor {anchor.isoformat()}', flush=True)
         print(f'Replay with --at {anchor.isoformat()}; payload saved in {target.relative_to(ROOT)}', flush=True)
         client = Curl(key, ca)
         backend = config.get('INGESTION_BACKEND', 'api')

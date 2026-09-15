@@ -58,6 +58,16 @@ class TestDataset(unittest.TestCase):
             self.assertEqual(first['sensor_id'], sensor)
             self.assertIn(sensor, sensors)
 
+    def test_distinct_six_decimal_station_coordinates(self):
+        self.assertEqual(len(set(data.COORDINATES.values())), 5)
+        for longitude, latitude in data.COORDINATES.values():
+            self.assertTrue(12.95 < longitude < 12.97)
+            self.assertTrue(48.83 < latitude < 48.84)
+            self.assertNotEqual(round(longitude, 3), longitude)
+            self.assertNotEqual(round(latitude, 3), latitude)
+        for row in self.rows:
+            self.assertEqual(tuple(row['lon_lat']), data.COORDINATES[row['sensor_id']])
+
     def test_scenario_behaviour(self):
         profiles = {p: [r['value'] for r in self.rows if r['metadata']['profile'] == p] for p in data.PROFILES}
         self.assertEqual(profiles['level-warning'][0], 1.4)
@@ -122,9 +132,13 @@ class TestAlertDemo(unittest.TestCase):
             previous = next(r for r in reversed(history) if r['sensor_id'] == live['sensor_id'])
             for field in ('value', 'unit', 'sensor_type', 'gateway_id', 'location_id', 'lon_lat'):
                 self.assertEqual(live.get(field), previous.get(field), (live['sensor_id'], field))
-            for field in ('profile', 'ingestion_route'):
+            for field in ('profile', 'ingestion_route', 'minimum', 'maximum'):
                 self.assertEqual(live['metadata'][field], previous['metadata'][field])
             self.assertGreater(live['timestamp'], previous['timestamp'])
+        for row in history + report['observations']:
+            self.assertLessEqual(row['metadata']['minimum'], row['value'])
+            self.assertGreaterEqual(row['metadata']['maximum'], row['value'])
+            self.assertAlmostEqual(row['metadata']['maximum']-row['metadata']['minimum'], .1)
         self.assertEqual(len(report['rules']), 4)
         self.assertEqual(len(report['observations']), 6)
         self.assertEqual({r['location_id'] for r in report['observations']}, {9000, 9001, 9002, 9003})

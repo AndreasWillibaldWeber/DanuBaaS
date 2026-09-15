@@ -16,7 +16,7 @@ The loader only supports the default local development API hostnames.
 
 ## Historical dataset
 
-Version 4 generates **580 observations**: four sensors with 145 readings each,
+Version 6 generates **580 observations**: four sensors with 145 readings each,
 ten minutes apart over 24 hours ending at the current UTC hour.
 
 | Sensor | Behaviour | Write route |
@@ -28,10 +28,21 @@ ten minutes apart over 24 hours ending at the current UTC hour.
 
 All observations have `synthetic: true` and a dataset version in metadata. They
 use the `demo-test-data` gateway, metres, and canonical `water-level` sensor type.
-Every sensor has a numeric location ID: 9000–9003 for historical stations and
-the same 9000–9003 for their live alert readings. Quickstart uses location 9004. Historical stations 9000 and 9002 also
-have the same example GPS coordinates on historical and live readings. These
-are illustrative locations, not claims about actual monitoring stations.
+Every sensor has a numeric location ID: 9000–9003 for the historical/live test
+stations and 9004 for quickstart. All five have distinct illustrative coordinates
+around Deggendorf, shared through `deploy/scripts/demo_stations.py`. Historical
+and live readings preserve each station's coordinates. These are synthetic
+positions, not surveyed monitoring locations. Grafana displays longitude and
+latitude to six decimal places so nearby positions remain distinguishable; this
+display precision does not imply survey accuracy.
+
+| Station | Longitude | Latitude |
+| --- | --- | --- |
+| WL-001 (quickstart) | 12.958742 | 48.835216 |
+| WL-002 | 12.960184 | 48.834527 |
+| WL-003 | 12.963218 | 48.832946 |
+| WL-004 | 12.956831 | 48.831704 |
+| WL-005 | 12.965407 | 48.836092 |
 
 Each route receives single and batch requests, with batches of at most 100.
 Every observation is read back through **both** endpoints and compared, including
@@ -159,3 +170,11 @@ in rolled-back PostgreSQL transactions. CI runs it for both ingestion backends.
 Version 4 replaces the mismatched version 3 histories, which previously jumped
 to unrelated levels when live alert samples began. Regression tests compare the
 last historical and first live samples and preserve station attributes.
+
+Version 5 adds explicit asymmetric minimum/maximum bounds to historical and live
+readings. See [measured ranges](measurement-ranges.md) for validation, range charts
+and immutable trigger values in the active-alert table.
+
+Version 6 assigns distinct six-decimal coordinates to all five test stations.
+Earlier immutable readings are not rewritten; the fixture reset replaces the
+loader-owned historical/live samples and setup submits a new quickstart reading.
