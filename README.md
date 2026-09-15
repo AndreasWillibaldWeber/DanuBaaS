@@ -284,3 +284,6 @@ The workshop report and its original images are not included in this repository.
 [security/debian](security/debian/README.md) contains policy generation, an
 nftables trial/rollback installer, SSH/fail2ban/update templates and operational
 guidance. Run `make test-security` to validate the tools without changing the host.
+
+The [measured range contract](docs/measurement-ranges.md) documents optional
+minimum/maximum bounds, Grafana range charts and alert evidence snapshots.

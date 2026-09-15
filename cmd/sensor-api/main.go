@@ -16,6 +16,7 @@ import (
 
 	"github.com/AndreasWillibaldWeber/DanuBaaS/internal/config"
 	"github.com/AndreasWillibaldWeber/DanuBaaS/internal/httpapi"
+	"github.com/AndreasWillibaldWeber/DanuBaaS/internal/monitoring"
 	"github.com/AndreasWillibaldWeber/DanuBaaS/internal/postgres"
 )
 
@@ -42,8 +43,24 @@ func run() error {
 		}
 		return nil
 	}
+	if mode == "dashboard-healthcheck" {
+		heartbeat, err := os.Stat("/dashboards/.healthy")
+		if err != nil || time.Since(heartbeat.ModTime()) > 35*time.Second {
+			return errors.New("dashboard synchronization is not healthy")
+		}
+		return nil
+	}
+	if mode == "configure-dashboard" {
+		cfg, err := config.Load(false)
+		if err != nil {
+			return err
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		return monitoring.Run(ctx, cfg.DSN, "/input/sensors.json", "/dashboards/sensors.json")
+	}
 	if mode != "serve" && mode != "migrate" && mode != "configure-alerts" {
-		return errors.New("usage: sensor-api [serve|migrate|configure-alerts|healthcheck]")
+		return errors.New("usage: sensor-api [serve|migrate|configure-alerts|configure-dashboard|dashboard-healthcheck|healthcheck]")
 	}
 	cfg, err := config.Load(mode == "serve")
 	if err != nil {

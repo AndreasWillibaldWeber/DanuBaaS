@@ -109,3 +109,8 @@ Use the [Debian host-security baseline](../security/debian/README.md) for nftabl
 (including Docker forwarding), SSH, fail2ban, security updates, and an operations
 checklist. Host policies are applied explicitly on the server and are never run
 by `make dev` or `make prod`. Firewall changes support a timed trial and rollback.
+
+The `grafana-dashboard` service renders sensor-specific band pairings for the
+combined water-level chart. It uses the read-only Grafana database role and the
+`grafana_dashboards` volume; Grafana mounts that volume read-only. See
+[measured ranges](../docs/measurement-ranges.md) for refresh and health behaviour.

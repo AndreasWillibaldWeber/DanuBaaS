@@ -2,7 +2,7 @@
   "uid": "sensors",
   "title": "Water-level monitoring",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 6,
   "refresh": "10s",
   "time": {
     "from": "now-24h",
@@ -1156,17 +1156,34 @@
         {
           "refId": "A",
           "format": "time_series",
-          "rawSql": "SELECT time,value,CASE WHEN sensor_id='demo-stable' THEN 'WL-001' WHEN sensor_id='demo-fluctuating' THEN 'WL-002' WHEN sensor_id='demo-elevated' THEN 'WL-003' WHEN sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN sensor_id='quickstart' THEN 'WL-001'\nWHEN sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(sensor_id,'-',3) || '-' ||\nCASE split_part(sensor_id,'-',4) || '-' || split_part(sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE sensor_id END AS metric\nFROM sensor.dashboard_values WHERE $__timeFilter(time) AND sensor_type='water-level' AND unit='m'\nAND sensor_id IN (${sensor:sqlstring}) ORDER BY time",
+          "rawSql": "SELECT d.time,samples.value,\nd.sensor_id || ':' || samples.kind AS metric\nFROM sensor.dashboard_values d\nCROSS JOIN LATERAL (VALUES ('minimum',d.minimum),('maximum',d.maximum),('value',d.value)) samples(kind,value)\nWHERE $__timeFilter(time) AND d.sensor_type='water-level' AND d.unit='m'\nAND d.sensor_id IN (${sensor:sqlstring}) ORDER BY d.time,d.sensor_id,samples.kind",
           "editorMode": "code"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix: m"
+          "unit": "suffix: m",
+          "decimals": 3,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
         },
         "overrides": []
       },
-      "options": {}
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "description": "Water-level lines and measured minimum\u2013maximum bands for the selected sensors. Each band is paired by sensor ID. Missing bounds leave a value line only. Colours remain stable when filtering."
     },
     {
       "id": 2,
@@ -1204,6 +1221,46 @@
                 "value": true
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "longitude"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 6
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              },
+              {
+                "id": "noValue",
+                "value": "\u2014"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "latitude"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 6
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              },
+              {
+                "id": "noValue",
+                "value": "\u2014"
+              }
+            ]
           }
         ]
       },
@@ -1227,7 +1284,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT a.id,CASE WHEN r.sensor_id='demo-stable' THEN 'WL-001' WHEN r.sensor_id='demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id='demo-elevated' THEN 'WL-003' WHEN r.sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id='quickstart' THEN 'WL-001'\nWHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(r.sensor_id,'-',3) || '-' ||\nCASE split_part(r.sensor_id,'-',4) || '-' || split_part(r.sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station,\nlocation.location_id,r.sensor_id,a.kind,a.severity,a.opened_at,a.acknowledged_at,a.acknowledged_by\nFROM alerting.alerts a JOIN configuration.alert_rules r ON r.id=a.rule_id\nLEFT JOIN LATERAL (SELECT location_id FROM sensor.dashboard_values WHERE sensor_id=r.sensor_id\nORDER BY time DESC LIMIT 1) location ON true\nWHERE a.resolved_at IS NULL AND r.sensor_id IN (${sensor:sqlstring}) ORDER BY a.opened_at DESC LIMIT 100",
+          "rawSql": "SELECT a.id,CASE WHEN r.sensor_id='demo-stable' THEN 'WL-001' WHEN r.sensor_id='demo-fluctuating' THEN 'WL-002' WHEN r.sensor_id='demo-elevated' THEN 'WL-003' WHEN r.sensor_id='demo-rapid-rise' THEN 'WL-004' WHEN r.sensor_id='quickstart' THEN 'WL-001'\nWHEN r.sensor_id ~ '^demo-alert-[0-9a-f]{12}-(level|rise)-(warning|critical)$'\nTHEN 'WL-' || split_part(r.sensor_id,'-',3) || '-' ||\nCASE split_part(r.sensor_id,'-',4) || '-' || split_part(r.sensor_id,'-',5)\nWHEN 'level-warning' THEN '005' WHEN 'level-critical' THEN '006'\nWHEN 'rise-warning' THEN '007' ELSE '008' END ELSE r.sensor_id END AS station,\nlocation.location_id,r.sensor_id,a.kind,a.severity,\n(opening.details->>'value')::float8 AS value_at_trigger,\n(opening.details->>'minimum')::float8 AS minimum_at_trigger,\n(opening.details->>'maximum')::float8 AS maximum_at_trigger,a.opened_at,a.acknowledged_at,a.acknowledged_by\nFROM alerting.alerts a JOIN configuration.alert_rules r ON r.id=a.rule_id\nLEFT JOIN LATERAL (SELECT details FROM alerting.events WHERE alert_id=a.id AND event_type='opened' ORDER BY id LIMIT 1) opening ON true\nLEFT JOIN LATERAL (SELECT location_id FROM sensor.dashboard_values WHERE sensor_id=r.sensor_id\nORDER BY time DESC LIMIT 1) location ON true\nWHERE a.resolved_at IS NULL AND r.sensor_id IN (${sensor:sqlstring}) ORDER BY a.opened_at DESC LIMIT 100",
           "editorMode": "code"
         }
       ],
@@ -1245,11 +1302,163 @@
                 "value": true
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*_at_trigger$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: m"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "noValue",
+                "value": "\u2014"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 55
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "station"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 105
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "location_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kind"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "value_at_trigger"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "minimum_at_trigger"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "maximum_at_trigger"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "opened_at"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "acknowledged_at"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "acknowledged_by"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
           }
         ]
       },
       "options": {},
-      "description": "Current unresolved alerts for the selected sensors; independent of the historical time range."
+      "description": "Current unresolved alerts. Value and measured bounds in metres are snapshots from the opening event, not the latest reading or escalation. Stale alerts have no triggering measurement. Missing bounds remain unavailable."
     },
     {
       "id": 4,

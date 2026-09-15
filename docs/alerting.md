@@ -170,3 +170,6 @@ arrivals, version conflicts, seed preservation, acknowledgments, outbox leasing,
 and the restricted evaluator role. `make dev` additionally waits for a successful
 scheduled evaluation via the HTTPS status route. CI runs `make dev` in both
 API and MQTT deployment modes.
+
+See [measured ranges](measurement-ranges.md) for minimum/maximum chart bands and
+the value and bounds captured when an alert opens.

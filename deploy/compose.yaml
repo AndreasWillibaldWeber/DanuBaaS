@@ -161,6 +161,33 @@ services:
       api: {condition: service_healthy}
       mosquitto: {condition: service_started}
 
+  grafana-dashboard:
+    <<: *runtime
+    build: ..
+    image: dbe-sensor-api:local
+    command: [configure-dashboard]
+    read_only: true
+    cap_drop: [ALL]
+    environment:
+      DB_HOST: timescaledb
+      DB_NAME: sensors
+      DB_USER: grafana_reader
+      DB_PASSWORD_FILE: /run/secrets/db_grafana_password
+      DB_SSLMODE: disable
+    secrets: [db_grafana_password]
+    volumes:
+      - ./grafana/dashboards/sensors.json:/input/sensors.json:ro
+      - grafana_dashboards:/dashboards
+    networks: [database]
+    depends_on:
+      grants: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, /sensor-api, dashboard-healthcheck]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
   grafana:
     <<: *runtime
     image: grafana/grafana:13.1.0@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
@@ -181,11 +208,12 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_dashboards:/etc/grafana/dashboards:ro
       - ./grafana/start.sh:/etc/grafana/start.sh:ro
     networks: [edge, database]
     depends_on:
       grants: {condition: service_completed_successfully}
+      grafana-dashboard: {condition: service_healthy}
 
   caddy:
     <<: *runtime
@@ -238,6 +266,7 @@ volumes:
   mqtt_data: {}
   node_red_data: {}
   grafana_data: {}
+  grafana_dashboards: {}
   caddy_data: {}
   caddy_config: {}
 

@@ -49,7 +49,7 @@ are resolved by sensor ID. When no candidate has a current value, the card shows
 the appropriate missing-value placeholder; if an enabled rule exists, its station
 and limit are still shown.
 
-The historical time picker controls the chart and recent observations. Cards,
+The historical time picker controls the combined value/range chart and recent observations. Cards,
 unresolved alerts, and monitoring status describe **current** conditions and
 remain independent of that historical window. Sensor filtering applies to both.
 The evaluator heartbeat is global, shown alongside each selected rule's status;
@@ -73,10 +73,13 @@ timestamp ties using temporary PostgreSQL fixtures. These fixtures are rolled
 back. Every real panel and the dropdown are also executed with `grafana_reader`
 privileges. CI runs this check in both ingestion-backend Compose jobs.
 
-Dashboard JSON remains checked in, so deployment does not require running the
-builder. Normal migrations and existing read-only grants apply automatically.
+The dashboard template remains checked in. The read-only `grafana-dashboard`
+service renders native per-sensor band overrides into a shared volume at runtime. Normal migrations and existing read-only grants apply automatically.
 For an existing deployment, run `make dev` (or the documented production upgrade
 procedure) to apply migration `005` before using the updated dashboard. Grafana's
 file provisioning loads dashboard changes; refresh the browser afterwards.
 
 Canvas reference: [Grafana documentation](https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/visualizations/canvas/).
+
+See [measured ranges](measurement-ranges.md) for minimum/maximum chart bands and
+the value and bounds captured when an alert opens.

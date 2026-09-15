@@ -130,26 +130,49 @@ FROM card_values"""
                 'placement':{'width':370,'height':137},
                 'background':{'color':{'fixed':'#A65300' if severity=='warning' else '#A82020'}}}}
         panels.append(card)
-    chart = panel(1,'Water levels','timeseries',f"""SELECT time,value,{station('sensor_id')} AS metric
-FROM sensor.dashboard_values WHERE $__timeFilter(time) AND sensor_type='water-level' AND unit='m'
-AND {selected('sensor_id')} ORDER BY time""",0,5,24,10)
+    chart = panel(1,'Water levels','timeseries',f"""SELECT d.time,samples.value,
+d.sensor_id || ':' || samples.kind AS metric
+FROM sensor.dashboard_values d
+CROSS JOIN LATERAL (VALUES ('minimum',d.minimum),('maximum',d.maximum),('value',d.value)) samples(kind,value)
+WHERE $__timeFilter(time) AND d.sensor_type='water-level' AND d.unit='m'
+AND {selected('d.sensor_id')} ORDER BY d.time,d.sensor_id,samples.kind""",0,5,24,10,
+        description='Water-level lines and measured minimum–maximum bands for the selected sensors. Each band is paired by sensor ID. Missing bounds leave a value line only. Colours remain stable when filtering.')
     chart['targets'][0]['format']='time_series'
-    chart['fieldConfig']['defaults']={'unit':'suffix: m'}
+    chart['fieldConfig']['defaults']={'unit':'suffix: m','decimals':3,
+        'custom':{'lineWidth':2,'fillOpacity':0,'spanNulls':False,'showPoints':'never'}}
+    # The read-only dashboard reconciler supplies per-sensor field overrides.
+    # Native Grafana fillBelowTo requires an exact lower-bound series name.
+    chart['options']={'tooltip':{'mode':'multi'},'legend':{'displayMode':'list','placement':'bottom','showLegend':True}}
     panels.append(chart)
     observations=panel(2,'Recent observations','table',f"""SELECT time,{station('sensor_id')} AS station,
 sensor_id,sensor_type,value,unit,longitude,latitude,location_id,metadata
 FROM sensor.dashboard_values WHERE $__timeFilter(time) AND {selected('sensor_id')}
 ORDER BY time DESC LIMIT 100""",0,15,24,9)
     alerts=panel(3,'Active alerts','table',f"""SELECT a.id,{station('r.sensor_id')} AS station,
-location.location_id,r.sensor_id,a.kind,a.severity,a.opened_at,a.acknowledged_at,a.acknowledged_by
+location.location_id,r.sensor_id,a.kind,a.severity,
+(opening.details->>'value')::float8 AS value_at_trigger,
+(opening.details->>'minimum')::float8 AS minimum_at_trigger,
+(opening.details->>'maximum')::float8 AS maximum_at_trigger,a.opened_at,a.acknowledged_at,a.acknowledged_by
 FROM alerting.alerts a JOIN configuration.alert_rules r ON r.id=a.rule_id
+LEFT JOIN LATERAL (SELECT details FROM alerting.events WHERE alert_id=a.id AND event_type='opened' ORDER BY id LIMIT 1) opening ON true
 LEFT JOIN LATERAL (SELECT location_id FROM sensor.dashboard_values WHERE sensor_id=r.sensor_id
 ORDER BY time DESC LIMIT 1) location ON true
 WHERE a.resolved_at IS NULL AND {selected('r.sensor_id')} ORDER BY a.opened_at DESC LIMIT 100""",0,24,24,9,
-                 description='Current unresolved alerts for the selected sensors; independent of the historical time range.')
+                 description='Current unresolved alerts. Value and measured bounds in metres are snapshots from the opening event, not the latest reading or escalation. Stale alerts have no triggering measurement. Missing bounds remain unavailable.')
     for item in (observations,alerts):
         item['fieldConfig']['overrides']=[{'matcher':{'id':'byName','options':'sensor_id'},
                                            'properties':[{'id':'custom.hidden','value':True}]}]
+        if item is observations:
+            for coordinate in ('longitude','latitude'):
+                item['fieldConfig']['overrides'].append({'matcher':{'id':'byName','options':coordinate},
+                    'properties':[{'id':'decimals','value':6},{'id':'custom.width','value':130},{'id':'noValue','value':'—'}]})
+        if item is alerts:
+            item['fieldConfig']['overrides'].append({'matcher':{'id':'byRegexp','options':'.*_at_trigger$'},
+                'properties':[{'id':'unit','value':'suffix: m'},{'id':'decimals','value':3},{'id':'noValue','value':'—'}]})
+        if item is alerts:
+            for field, width in [('id',55),('station',105),('location_id',100),('kind',75),('severity',85),('value_at_trigger',140),('minimum_at_trigger',150),('maximum_at_trigger',150),('opened_at',180),('acknowledged_at',180),('acknowledged_by',140)]:
+                item['fieldConfig']['overrides'].append({'matcher':{'id':'byName','options':field},
+                    'properties':[{'id':'custom.width','value':width}]})
         panels.append(item)
     health=panel(4,'Monitoring status','table',SNAPSHOT+"""
 SELECT snapshot.station,snapshot.location_id,snapshot.enabled,snapshot.reading_status,
@@ -161,7 +184,7 @@ FROM snapshot CROSS JOIN alerting.evaluator_status e ORDER BY snapshot.sensor_id
     variable_sql=f"""SELECT {station('sensor_id')} AS __text,sensor_id AS __value FROM (
 SELECT DISTINCT sensor_id FROM sensor.dashboard_values WHERE sensor_type='water-level' AND unit='m'
 UNION SELECT sensor_id FROM configuration.alert_rules) sensors ORDER BY __text"""
-    return {'uid':'sensors','title':'Water-level monitoring','schemaVersion':39,'version':4,
+    return {'uid':'sensors','title':'Water-level monitoring','schemaVersion':39,'version':6,
             'refresh':'10s','time':{'from':'now-24h','to':'now'},
             'templating':{'list':[{'name':'sensor','label':'Monitored sensor','type':'query',
                 'datasource':SOURCE,'query':variable_sql,'definition':variable_sql,'refresh':1,

@@ -42,3 +42,22 @@ class DashboardContract(unittest.TestCase):
             sql=p['targets'][0]['rawSql']
             self.assertIn("WHEN sensor_id IS NULL THEN '—'",sql)
             self.assertIn("WHEN current_value IS NULL THEN '-.-- m",sql)
+
+    def test_combined_chart_and_opening_evidence(self):
+        dashboard = builder.dashboard()
+        panels = {p['id']:p for p in dashboard['panels']}
+        self.assertEqual([p['id'] for p in panels.values() if p['type']=='timeseries'], [1])
+        self.assertEqual([v['name'] for v in dashboard['templating']['list']], ['sensor'])
+        sql = panels[1]['targets'][0]['rawSql']
+        self.assertIn("('minimum',d.minimum),('maximum',d.maximum),('value',d.value)",sql)
+        self.assertIn("d.sensor_id || ':' || samples.kind",sql)
+        sql = panels[3]['targets'][0]['rawSql']
+        self.assertIn("event_type='opened'", sql)
+        self.assertLess(sql.index('a.severity'), sql.index('value_at_trigger'))
+        self.assertLess(sql.index('maximum_at_trigger'), sql.index('a.opened_at'))
+
+    def test_coordinates_keep_six_decimal_places(self):
+        observations = next(p for p in builder.dashboard()['panels'] if p['id']==2)
+        overrides = {o['matcher']['options']:o['properties'] for o in observations['fieldConfig']['overrides']}
+        for coordinate in ('longitude', 'latitude'):
+            self.assertIn({'id':'decimals','value':6}, overrides[coordinate])
