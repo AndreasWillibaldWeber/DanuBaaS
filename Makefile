@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := test
-.PHONY: test integration vet build fmt dev dev-test-data prod prod-check test-deploy test-e2e test-security test-grafana test-data-reset
+.PHONY: test integration vet build fmt dev dev-test-data prod prod-check test-deploy test-e2e test-security test-grafana test-data-reset test-ranges
 
 # These commands never delete volumes or rotate existing credentials.
 dev:
@@ -51,3 +51,6 @@ test-grafana:
 
 test-data-reset:
 	python3 deploy/scripts/verify_test_data_reset.py
+
+test-ranges:
+	python3 deploy/scripts/verify_measurement_ranges.py

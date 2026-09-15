@@ -61,7 +61,7 @@ jobs:
           Path('deploy/.env').write_text(template.replace('INGESTION_BACKEND=api', 'INGESTION_BACKEND=' + os.environ['E2E_BACKEND']))
           PY
       - run: make dev-test-data
-      - run: make test-grafana test-data-reset
+      - run: make test-grafana test-data-reset test-ranges
       - name: Verify writes and reads with curl
         env:
           E2E_BACKEND: ${{ matrix.backend }}

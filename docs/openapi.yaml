@@ -354,7 +354,13 @@ components:
         location_id: {$ref: '#/components/schemas/LocationID'}
         metadata:
           type: [object, 'null']
-          description: Source-specific JSON fields; key length 1–128 UTF-8 bytes
+          description: Source-specific JSON fields; key length 1–128 UTF-8 bytes. If minimum or maximum is present, both must be finite numbers in the observation unit with minimum <= value <= maximum.
+          properties:
+            minimum: {type: number, format: double, description: Measured lower bound in the observation unit}
+            maximum: {type: number, format: double, description: Measured upper bound in the observation unit}
+          dependentRequired:
+            minimum: [maximum]
+            maximum: [minimum]
           propertyNames: {minLength: 1, maxLength: 128}
           additionalProperties: true
     Record:

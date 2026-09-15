@@ -101,6 +101,14 @@ func (v *Value) Normalize() error {
 			return fmt.Errorf("invalid metadata entry")
 		}
 	}
+	minimum, hasMinimum := v.Metadata["minimum"]
+	maximum, hasMaximum := v.Metadata["maximum"]
+	if hasMinimum || hasMaximum {
+		var low, high *float64
+		if !hasMinimum || !hasMaximum || json.Unmarshal(minimum, &low) != nil || json.Unmarshal(maximum, &high) != nil || low == nil || high == nil || math.IsInf(*low, 0) || math.IsInf(*high, 0) || *low > *v.Value || *high < *v.Value {
+			return errors.New("metadata minimum and maximum must be finite numbers with minimum <= value <= maximum")
+		}
+	}
 	encoded, err := json.Marshal(v)
 	if err != nil || len(encoded) > MaxObservationBytes {
 		return errors.New("normalized observation exceeds 16 KiB")
